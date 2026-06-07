@@ -1,0 +1,412 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PAC Ontology (Poetry And Critique) — v0.4.0
+  ===========================================
+  비평문을, 그것이 인용하는 시·시집 문구와 함께 저장·연결하고,
+  비평 대상 시인을 Wikidata(LOD)와 연결하여 추론 질의를 지원하는 온톨로지.
+
+  v0.3.0 → v0.4.0 변경 (OA 슬림화 — 개인·로컬 운용에 맞춘 경량화):
+   - 폐지: oa:TextPositionSelector(클래스), oa:start, oa:end — 선언만 되고 미사용.
+   - 폐지: oa:prefix, oa:suffix — 텍스트를 자체 보관(소유)하므로 재고정용 문맥 불필요.
+   - 운용 변경: body(인용 표지)는 oa:FragmentSelector(xml:id) 하나로 충분.
+       표지 문구는 pac:fullText 의 <q xml:id> 에 이미 있으므로 body 쪽
+       oa:TextQuoteSelector 를 더 이상 쓰지 않는다(클래스는 target 용으로 유지).
+   - oa:TextQuoteSelector 는 target(원시 인용 대상)의 oa:exact 표기로만 사용.
+   - 외부 연계 질의(Wikidata) 시나리오 확장은 명세서 §7 참조(TBox/SHACL 영향 없음).
+
+  v0.2.0 → v0.3.0 변경:
+   - 데이터 무결성 검증을 SHACL(pac-shapes.ttl)로 분리·추가. TBox 자체는 변동 없음.
+   - 예시 ABox 의 자리표시자(Wikidata Q번호·ISBN)를 실제 값으로 교체.
+
+  v0.1.0 → v0.2.0 핵심 변경 (근거는 해설서.html 참조):
+   1. 인용 모델을 W3C Web Annotation Data Model(oa:)로 재설계.
+      - pac:Quotation ⊑ oa:Annotation
+      - 비평문 속 인용 표지  = oa:hasBody  → oa:SpecificResource (+ 선택자)
+      - 시 속 인용 대상      = oa:hasTarget → oa:SpecificResource (+ 선택자)
+      - pac:TextSelection ⊑ oa:Selector (연/행 기반 사용자 정의 선택자)
+   2. 비연속 인용 지원: oa:hasTarget 다중 허용(Functional 제거).
+   3. 본문 <q> 가시화: oa:FragmentSelector(xml:id) + oa:TextQuoteSelector.
+      → pac:anchorId, pac:positionInCritique, pac:quotedText, pac:hasSelection 폐지.
+   4. 외부 어휘 비훼손: dct:creator 치역·dct:title 정의역 제약을
+      하위속성 pac:hasAuthor / pac:documentTitle 로 이전.
+   5. pac:quotedFrom 은 (oa:hasTarget ∘ oa:hasSource) 속성 체인으로 도출.
+
+  - 직렬화: RDF/XML (Protege 호환)
+  - 외부 어휘: foaf, bibo, dct, cito, oa  (owl:imports 없이 사용 용어만 선언)
+  - 인스턴스 생성 허용 클래스: pac:Poet, pac:Critic, bibo:Book, bibo:Article,
+    pac:Poem, pac:Quotation, oa:SpecificResource, oa:Selector(및 하위),
+    pac:TextSelection
+  - 추상 클래스(직접 인스턴스 금지): foaf:Person, bibo:Document
+-->
+<!DOCTYPE rdf:RDF [
+  <!ENTITY owl  "http://www.w3.org/2002/07/owl#" >
+  <!ENTITY rdf  "http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+  <!ENTITY rdfs "http://www.w3.org/2000/01/rdf-schema#" >
+  <!ENTITY xsd  "http://www.w3.org/2001/XMLSchema#" >
+  <!ENTITY foaf "http://xmlns.com/foaf/0.1/" >
+  <!ENTITY bibo "http://purl.org/ontology/bibo/" >
+  <!ENTITY dct  "http://purl.org/dc/terms/" >
+  <!ENTITY cito "http://purl.org/spar/cito/" >
+  <!ENTITY oa   "http://www.w3.org/ns/oa#" >
+  <!ENTITY pac  "http://example.org/pac#" >
+]>
+<rdf:RDF
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+    xmlns:foaf="http://xmlns.com/foaf/0.1/"
+    xmlns:bibo="http://purl.org/ontology/bibo/"
+    xmlns:dct="http://purl.org/dc/terms/"
+    xmlns:cito="http://purl.org/spar/cito/"
+    xmlns:oa="http://www.w3.org/ns/oa#"
+    xmlns:pac="http://example.org/pac#"
+    xml:base="http://example.org/pac">
+
+  <!-- ============================================================ -->
+  <!-- Ontology Header                                              -->
+  <!-- ============================================================ -->
+  <owl:Ontology rdf:about="http://example.org/pac">
+    <rdfs:label xml:lang="ko">PAC 온톨로지 (Poetry And Critique)</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평문과 그 인용 대상(시/시집)을 연결하여 저장하고, 비평 대상 시인을 Wikidata와 연결해 추론 질의를 지원하는 온톨로지. 인용은 W3C Web Annotation Data Model(oa:)을 따른다. 인스턴스 생성은 pac:Poet, pac:Critic, bibo:Book, bibo:Article, pac:Poem, pac:Quotation 및 그 주석 구성요소(oa:SpecificResource, oa:Selector 하위, pac:TextSelection)에 허용한다.</rdfs:comment>
+    <owl:versionInfo>0.4.0</owl:versionInfo>
+    <owl:priorVersion rdf:resource="http://example.org/pac/0.3.0"/>
+    <rdfs:seeAlso rdf:resource="http://example.org/pac/shapes"/>
+  </owl:Ontology>
+
+  <!-- ============================================================ -->
+  <!-- External classes (light declaration, no owl:imports)        -->
+  <!-- ============================================================ -->
+
+  <!-- 추상 상위 클래스: 직접 인스턴스화하지 않는다 -->
+  <owl:Class rdf:about="&foaf;Person">
+    <rdfs:label xml:lang="ko">사람 (추상)</rdfs:label>
+    <rdfs:comment xml:lang="ko">pac:Poet, pac:Critic 의 공통 상위. 직접 인스턴스를 만들지 않는다.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="&bibo;Document">
+    <rdfs:label xml:lang="ko">문헌 (추상)</rdfs:label>
+    <rdfs:comment xml:lang="ko">bibo:Book, bibo:Article, pac:Poem 의 공통 상위. 직접 인스턴스를 만들지 않는다.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="&bibo;Book">
+    <rdfs:label xml:lang="ko">시집 (B)</rdfs:label>
+    <rdfs:comment xml:lang="ko">개별 실물 시집.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&bibo;Document"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="&bibo;Article">
+    <rdfs:label xml:lang="ko">비평문 (C)</rdfs:label>
+    <rdfs:comment xml:lang="ko">컴퓨터로 옮겨 저장한 개별 비평문.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&bibo;Document"/>
+  </owl:Class>
+
+  <!-- Web Annotation 어휘 (외부): 도메인/치역 공리를 부가하지 않는다(의미 비훼손) -->
+  <owl:Class rdf:about="&oa;Annotation">
+    <rdfs:label xml:lang="ko">주석 (Web Annotation)</rdfs:label>
+    <rdfs:comment xml:lang="ko">하나의 본문(body)과 하나 이상의 대상(target)을 잇는 주석. pac:Quotation 의 상위.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="&oa;SpecificResource">
+    <rdfs:label xml:lang="ko">특정 자원</rdfs:label>
+    <rdfs:comment xml:lang="ko">어떤 자원(oa:hasSource)의 특정 부분/측면을 선택자(oa:hasSelector)로 가리키는 자원. 본 온톨로지에서 인용 표지(본문 속 위치)와 인용 대상(시 속 위치)을 모두 이 클래스로 표현한다.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="&oa;Selector">
+    <rdfs:label xml:lang="ko">선택자</rdfs:label>
+    <rdfs:comment xml:lang="ko">자원 내부의 한 부분을 지정하는 방법. 하위에 oa:TextQuoteSelector, oa:FragmentSelector, pac:TextSelection 이 있다.</rdfs:comment>
+  </owl:Class>
+
+  <owl:Class rdf:about="&oa;TextQuoteSelector">
+    <rdfs:label xml:lang="ko">인용문구 선택자</rdfs:label>
+    <rdfs:comment xml:lang="ko">대상 텍스트를 정확 문구(oa:exact)로 지정한다. v0.4 부터는 target(원시 인용 대상)의 인용 원문을 적는 용도로만 사용한다(앞뒤 문맥 oa:prefix/oa:suffix 는 v0.4 에서 폐지).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&oa;Selector"/>
+  </owl:Class>
+
+  <owl:Class rdf:about="&oa;FragmentSelector">
+    <rdfs:label xml:lang="ko">조각 선택자</rdfs:label>
+    <rdfs:comment xml:lang="ko">URI 조각(fragment)으로 부분을 지정한다. 본 온톨로지에서는 비평문 본문의 &lt;q xml:id="N"&gt; 요소를 rdf:value="N" 으로 가리키는 데 쓴다(dct:conformsTo = xml:id 규격). v0.4 에서 body(인용 표지)는 이 선택자 하나로 지정한다.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&oa;Selector"/>
+  </owl:Class>
+
+  <!-- ============================================================ -->
+  <!-- PAC classes                                                  -->
+  <!-- ============================================================ -->
+
+  <!-- A-1 : 시인 -->
+  <owl:Class rdf:about="&pac;Poet">
+    <rdfs:label xml:lang="ko">시인 (A)</rdfs:label>
+    <rdfs:comment xml:lang="ko">시·시집의 저자. owl:sameAs 로 Wikidata 등 외부 LOD 시인과 연결한다.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&foaf;Person"/>
+  </owl:Class>
+
+  <!-- A-2 : 비평자(나) -->
+  <owl:Class rdf:about="&pac;Critic">
+    <rdfs:label xml:lang="ko">비평자 (A)</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평문을 작성하는 주체(나). Poet 와 배타적이지 않다(시인이면서 비평자일 수 있다).</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&foaf;Person"/>
+  </owl:Class>
+
+  <!-- D : 비평 대상이 된 개별 시 -->
+  <owl:Class rdf:about="&pac;Poem">
+    <rdfs:label xml:lang="ko">시 (D)</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평 대상이 된 개별 시. 보통 dct:isPartOf 로 시집(bibo:Book)에 속한다.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&bibo;Document"/>
+  </owl:Class>
+
+  <!-- E : 인용 = Web Annotation -->
+  <owl:Class rdf:about="&pac;Quotation">
+    <rdfs:label xml:lang="ko">인용 (E)</rdfs:label>
+    <rdfs:comment xml:lang="ko">하나의 비평문 안에서 사용된 하나의 인용. oa:Annotation 의 하위로서, oa:hasBody 로 비평문 본문 속 인용 표지를, oa:hasTarget 로 원시(시) 속 인용 대상을 가리킨다. 대상이 둘 이상이면 비연속(discontinuous) 인용이다.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&oa;Annotation"/>
+  </owl:Class>
+
+  <!-- F : 텍스트 선택 영역(시 내부 위치) = oa:Selector 의 사용자 정의 하위 -->
+  <owl:Class rdf:about="&pac;TextSelection">
+    <rdfs:label xml:lang="ko">텍스트 선택 영역 (F)</rdfs:label>
+    <rdfs:comment xml:lang="ko">원시(原詩) 내부의 위치를 연/행 범위로 지정하는 사용자 정의 선택자. oa:SpecificResource 의 oa:hasSelector 값으로 쓰인다.</rdfs:comment>
+    <rdfs:subClassOf rdf:resource="&oa;Selector"/>
+  </owl:Class>
+
+  <!-- 인용 유형 통제어휘 -->
+  <owl:Class rdf:about="&pac;QuotationType">
+    <rdfs:label xml:lang="ko">인용 유형</rdfs:label>
+    <rdfs:comment xml:lang="ko">직접/간접 인용 구분을 위한 통제어휘 클래스.</rdfs:comment>
+  </owl:Class>
+  <pac:QuotationType rdf:about="&pac;DirectQuotation">
+    <rdfs:label xml:lang="ko">직접 인용</rdfs:label>
+    <rdfs:comment xml:lang="ko">원문을 그대로 옮긴 인용(보통 따옴표 포함).</rdfs:comment>
+  </pac:QuotationType>
+  <pac:QuotationType rdf:about="&pac;IndirectQuotation">
+    <rdfs:label xml:lang="ko">간접 인용</rdfs:label>
+    <rdfs:comment xml:lang="ko">원문을 그대로 옮기지 않고 위치·취지로 지시하는 인용(예: "4연까지", "1연과 5연에서는").</rdfs:comment>
+  </pac:QuotationType>
+
+  <!-- 인스턴스화 가능한 핵심 클래스들의 상호 배타성 -->
+  <owl:AllDisjointClasses>
+    <owl:members rdf:parseType="Collection">
+      <rdf:Description rdf:about="&bibo;Book"/>
+      <rdf:Description rdf:about="&bibo;Article"/>
+      <rdf:Description rdf:about="&pac;Poem"/>
+      <rdf:Description rdf:about="&oa;Annotation"/>
+      <rdf:Description rdf:about="&oa;SpecificResource"/>
+      <rdf:Description rdf:about="&oa;Selector"/>
+      <rdf:Description rdf:about="&foaf;Person"/>
+    </owl:members>
+  </owl:AllDisjointClasses>
+
+  <!-- ============================================================ -->
+  <!-- External Object Properties (의미 비훼손: 지역 공리 최소화)     -->
+  <!-- ============================================================ -->
+
+  <!-- dct:creator : 전역 의미를 좁히지 않는다. 치역 제약은 하위속성으로. -->
+  <owl:ObjectProperty rdf:about="&dct;creator">
+    <rdfs:label xml:lang="ko">저자</rdfs:label>
+    <rdfs:comment xml:lang="ko">작품의 저자. 본 온톨로지는 이 표준 속성에 정의역/치역을 부가하지 않는다(외부 어휘 비훼손). "저자는 사람"이라는 응용 제약은 하위속성 pac:hasAuthor 로 표현한다.</rdfs:comment>
+  </owl:ObjectProperty>
+
+  <!-- dct:isPartOf  (응용 프로파일: Poem -> Book) -->
+  <owl:ObjectProperty rdf:about="&dct;isPartOf">
+    <rdfs:label xml:lang="ko">~의 부분</rdfs:label>
+    <rdfs:comment xml:lang="ko">시가 어느 시집에 수록되어 있는지. 정의역/치역은 응용 프로파일 차원의 제약이다.</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;Poem"/>
+    <rdfs:range rdf:resource="&bibo;Book"/>
+  </owl:ObjectProperty>
+
+  <!-- cito:critiques  (응용 프로파일: Article -> Poem | Book) -->
+  <owl:ObjectProperty rdf:about="&cito;critiques">
+    <rdfs:label xml:lang="ko">비평한다</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평문이 비평하는 대상. 개별 시(pac:Poem)일 수도, 시집 전체(bibo:Book)일 수도 있다.</rdfs:comment>
+    <rdfs:domain rdf:resource="&bibo;Article"/>
+    <rdfs:range>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="&pac;Poem"/>
+          <owl:Class rdf:about="&bibo;Book"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:range>
+  </owl:ObjectProperty>
+
+  <!-- Web Annotation object properties (외부: 지역 공리 없음) -->
+  <owl:ObjectProperty rdf:about="&oa;hasBody">
+    <rdfs:label xml:lang="ko">본문을 가진다</rdfs:label>
+    <rdfs:comment xml:lang="ko">주석의 본문. 본 온톨로지에서는 비평문 안의 인용 표지(어디서 인용했는가)를 가리킨다.</rdfs:comment>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="&oa;hasTarget">
+    <rdfs:label xml:lang="ko">대상을 가진다</rdfs:label>
+    <rdfs:comment xml:lang="ko">주석의 대상. 본 온톨로지에서는 원시(시) 속 인용 대상(무엇을 인용했는가)을 가리킨다. 값이 둘 이상이면 비연속 인용.</rdfs:comment>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="&oa;hasSource">
+    <rdfs:label xml:lang="ko">출처 자원</rdfs:label>
+    <rdfs:comment xml:lang="ko">oa:SpecificResource 가 부분을 가리키는 원래 자원(비평문 또는 시).</rdfs:comment>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="&oa;hasSelector">
+    <rdfs:label xml:lang="ko">선택자를 가진다</rdfs:label>
+    <rdfs:comment xml:lang="ko">oa:SpecificResource 가 출처 자원의 어느 부분인지 지정하는 선택자.</rdfs:comment>
+  </owl:ObjectProperty>
+
+  <!-- ============================================================ -->
+  <!-- PAC Object Properties                                        -->
+  <!-- ============================================================ -->
+
+  <!-- pac:hasAuthor : dct:creator 의 응용 하위속성(치역 = 사람) -->
+  <owl:ObjectProperty rdf:about="&pac;hasAuthor">
+    <rdfs:subPropertyOf rdf:resource="&dct;creator"/>
+    <rdfs:label xml:lang="ko">저자(사람)</rdfs:label>
+    <rdfs:comment xml:lang="ko">작품의 저자를 사람으로 한정하는 하위속성. 이 속성으로 적으면 추론기가 dct:creator 도 함께 채우므로 표준 호환된다.</rdfs:comment>
+    <rdfs:domain rdf:resource="&bibo;Document"/>
+    <rdfs:range rdf:resource="&foaf;Person"/>
+  </owl:ObjectProperty>
+
+  <!-- pac:hasQuotation  (Article -> Quotation) -->
+  <owl:ObjectProperty rdf:about="&pac;hasQuotation">
+    <rdfs:label xml:lang="ko">인용을 가진다</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평문이 포함하는 인용.</rdfs:comment>
+    <rdfs:domain rdf:resource="&bibo;Article"/>
+    <rdfs:range rdf:resource="&pac;Quotation"/>
+  </owl:ObjectProperty>
+
+  <!-- pac:quotedIn  (Quotation -> Article), inverse of hasQuotation -->
+  <owl:ObjectProperty rdf:about="&pac;quotedIn">
+    <rdfs:label xml:lang="ko">~에서 인용됨</rdfs:label>
+    <rdfs:comment xml:lang="ko">이 인용이 등장하는 비평문. pac:hasQuotation 의 역속성.</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;Quotation"/>
+    <rdfs:range rdf:resource="&bibo;Article"/>
+    <owl:inverseOf rdf:resource="&pac;hasQuotation"/>
+  </owl:ObjectProperty>
+
+  <!-- pac:quotedFrom  (Quotation -> Poem | Book) : (oa:hasTarget ∘ oa:hasSource) 로 도출 -->
+  <owl:ObjectProperty rdf:about="&pac;quotedFrom">
+    <rdfs:label xml:lang="ko">~에서 인용함</rdfs:label>
+    <rdfs:comment xml:lang="ko">인용된 원문의 출처(개별 시 또는 시집). oa:hasTarget 의 대상이 가리키는 oa:hasSource 로부터 속성 체인으로 도출된다. 비연속 인용이라도 출처가 같으면 한 값이 된다. (체인 속성이므로 Functional 로 선언하지 않는다.)</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;Quotation"/>
+    <rdfs:range>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="&pac;Poem"/>
+          <owl:Class rdf:about="&bibo;Book"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:range>
+    <owl:propertyChainAxiom rdf:parseType="Collection">
+      <rdf:Description rdf:about="&oa;hasTarget"/>
+      <rdf:Description rdf:about="&oa;hasSource"/>
+    </owl:propertyChainAxiom>
+  </owl:ObjectProperty>
+
+  <!-- pac:quotationType  (Quotation -> QuotationType) -->
+  <owl:ObjectProperty rdf:about="&pac;quotationType">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">인용 유형</rdfs:label>
+    <rdfs:comment xml:lang="ko">이 인용이 직접 인용인지 간접 인용인지.</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;Quotation"/>
+    <rdfs:range rdf:resource="&pac;QuotationType"/>
+  </owl:ObjectProperty>
+
+  <!-- ============================================================ -->
+  <!-- Datatype Properties                                          -->
+  <!-- ============================================================ -->
+
+  <!-- 외부: foaf:name -->
+  <owl:DatatypeProperty rdf:about="&foaf;name">
+    <rdfs:label xml:lang="ko">이름</rdfs:label>
+    <rdfs:domain rdf:resource="&foaf;Person"/>
+    <rdfs:range rdf:resource="&xsd;string"/>
+  </owl:DatatypeProperty>
+
+  <!-- 외부: dct:title — 정의역을 부가하지 않는다(비훼손). 응용 제약은 pac:documentTitle. -->
+  <owl:DatatypeProperty rdf:about="&dct;title">
+    <rdfs:label xml:lang="ko">제목</rdfs:label>
+    <rdfs:comment xml:lang="ko">표제. 본 온톨로지는 이 표준 속성에 정의역을 부가하지 않는다. "제목은 문헌에만"이라는 응용 제약은 하위속성 pac:documentTitle 로 표현한다.</rdfs:comment>
+    <rdfs:range rdf:resource="&xsd;string"/>
+  </owl:DatatypeProperty>
+
+  <!-- pac:documentTitle : dct:title 의 응용 하위속성(정의역 = 문헌) -->
+  <owl:DatatypeProperty rdf:about="&pac;documentTitle">
+    <rdfs:subPropertyOf rdf:resource="&dct;title"/>
+    <rdfs:label xml:lang="ko">문헌 제목</rdfs:label>
+    <rdfs:comment xml:lang="ko">정의역을 bibo:Document 로 한정하는 제목 하위속성. 이 속성으로 적으면 추론기가 dct:title 도 함께 채운다.</rdfs:comment>
+    <rdfs:domain rdf:resource="&bibo;Document"/>
+    <rdfs:range rdf:resource="&xsd;string"/>
+  </owl:DatatypeProperty>
+
+  <!-- 외부: dct:created -->
+  <owl:DatatypeProperty rdf:about="&dct;created">
+    <rdfs:label xml:lang="ko">작성일</rdfs:label>
+    <rdfs:domain rdf:resource="&bibo;Article"/>
+    <rdfs:range rdf:resource="&xsd;date"/>
+  </owl:DatatypeProperty>
+
+  <!-- 외부: bibo:isbn13 -->
+  <owl:DatatypeProperty rdf:about="&bibo;isbn13">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">ISBN-13</rdfs:label>
+    <rdfs:domain rdf:resource="&bibo;Book"/>
+    <rdfs:range rdf:resource="&xsd;string"/>
+  </owl:DatatypeProperty>
+
+  <!-- pac:fullText  (Article -> rdf:HTML) -->
+  <owl:DatatypeProperty rdf:about="&pac;fullText">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">본문</rdfs:label>
+    <rdfs:comment xml:lang="ko">비평문 본문. &lt;q xml:id="..."&gt; 요소로 인용 표지를 단 HTML. 각 q 요소는 해당 Quotation 의 oa:hasBody → oa:FragmentSelector(rdf:value=그 xml:id) 로 가리켜진다.</rdfs:comment>
+    <rdfs:domain rdf:resource="&bibo;Article"/>
+    <rdfs:range rdf:resource="&rdf;HTML"/>
+  </owl:DatatypeProperty>
+
+  <!-- Web Annotation datatype properties (외부: 지역 공리 없음) -->
+  <owl:DatatypeProperty rdf:about="&oa;exact">
+    <rdfs:label xml:lang="ko">정확 문구</rdfs:label>
+    <rdfs:comment xml:lang="ko">oa:TextQuoteSelector 가 가리키는 정확한 텍스트. v0.4 에서는 target 의 인용 원문에만 쓴다.</rdfs:comment>
+    <rdfs:range rdf:resource="&xsd;string"/>
+  </owl:DatatypeProperty>
+
+  <!-- 외부: dct:conformsTo (FragmentSelector 의 조각 규격 표기) -->
+  <owl:AnnotationProperty rdf:about="&dct;conformsTo">
+    <rdfs:label xml:lang="ko">준거 규격</rdfs:label>
+  </owl:AnnotationProperty>
+
+  <!-- pac:targetOrder : 비연속 인용에서 대상 부분의 순서 -->
+  <owl:DatatypeProperty rdf:about="&pac;targetOrder">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">대상 순서</rdfs:label>
+    <rdfs:comment xml:lang="ko">비연속 인용에서 각 인용 대상(oa:SpecificResource)이 몇 번째 부분인지. 단일 대상이면 생략 가능.</rdfs:comment>
+    <rdfs:domain rdf:resource="&oa;SpecificResource"/>
+    <rdfs:range rdf:resource="&xsd;positiveInteger"/>
+  </owl:DatatypeProperty>
+
+  <!-- pac:TextSelection 의 연/행 속성 -->
+  <owl:DatatypeProperty rdf:about="&pac;startStanza">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">시작 연</rdfs:label>
+    <rdfs:comment xml:lang="ko">인용이 시작되는 연(聯) 번호.</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;TextSelection"/>
+    <rdfs:range rdf:resource="&xsd;positiveInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="&pac;endStanza">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">끝 연</rdfs:label>
+    <rdfs:comment xml:lang="ko">인용이 끝나는 연(聯) 번호.</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;TextSelection"/>
+    <rdfs:range rdf:resource="&xsd;positiveInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="&pac;startLine">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">시작 행</rdfs:label>
+    <rdfs:comment xml:lang="ko">인용이 시작되는 행 번호. 기준은 "해당 연 안에서 1부터"로 고정한다(운용 규약).</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;TextSelection"/>
+    <rdfs:range rdf:resource="&xsd;positiveInteger"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="&pac;endLine">
+    <rdf:type rdf:resource="&owl;FunctionalProperty"/>
+    <rdfs:label xml:lang="ko">끝 행</rdfs:label>
+    <rdfs:comment xml:lang="ko">인용이 끝나는 행 번호. 기준은 "해당 연 안에서 1부터"로 고정한다(운용 규약).</rdfs:comment>
+    <rdfs:domain rdf:resource="&pac;TextSelection"/>
+    <rdfs:range rdf:resource="&xsd;positiveInteger"/>
+  </owl:DatatypeProperty>
+
+</rdf:RDF>

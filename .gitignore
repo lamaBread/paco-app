@@ -1,0 +1,10 @@
+# 편집 원본 DB (런타임 생성 — bin/init-db.php 로 재생성)
+/data/*.sqlite
+/data/*.sqlite-wal
+/data/*.sqlite-shm
+
+# 정적 빌드 산출물 (bin/build.php 로 재생성)
+/dist/
+
+# OS
+.DS_Store

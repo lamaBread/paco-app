@@ -1,0 +1,229 @@
+# PAC SHACL Shapes — v0.4.0
+# =========================
+# v0.4: oa:prefix/oa:suffix 제약 제거(속성 폐지). body 는 FragmentSelector 만 요구(기존과 동일).
+#
+# pac-ontology.owl(TBox) + pac-sample.owl(ABox) 의 데이터 무결성을 검증한다.
+# OWL 의 정의역/치역은 '추론'이라 위반을 잡지 못한다. 닫힌 세계의 '검증'은 SHACL 의 일이다.
+#
+# 검증 방법(pySHACL):
+#   pyshacl -s pac-shapes.ttl -e pac-ontology.owl -df xml pac-sample.owl
+#   (-e 로 TBox 를 주면 rdf:type 함의·하위클래스가 반영된다)
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix pac:  <http://example.org/pac#> .
+@prefix oa:   <http://www.w3.org/ns/oa#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix bibo: <http://purl.org/ontology/bibo/> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix cito: <http://purl.org/spar/cito/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#######################################################################
+# 1. 인물 — Person 하위(Poet/Critic)
+#######################################################################
+
+pac:PoetShape a sh:NodeShape ;
+    sh:targetClass pac:Poet ;
+    sh:property [
+        sh:path foaf:name ; sh:minCount 1 ; sh:datatype xsd:string ;
+        sh:message "시인은 foaf:name 을 가져야 한다." ] ;
+    sh:property [
+        sh:path owl:sameAs ; sh:nodeKind sh:IRI ; sh:severity sh:Warning ;
+        sh:message "시인은 외부 LOD(Wikidata 등) owl:sameAs 연결이 권장된다." ] .
+
+pac:CriticShape a sh:NodeShape ;
+    sh:targetClass pac:Critic ;
+    sh:property [
+        sh:path foaf:name ; sh:minCount 1 ; sh:datatype xsd:string ;
+        sh:message "비평자는 foaf:name 을 가져야 한다." ] .
+
+#######################################################################
+# 2. 시집 / 시 / 비평문 — 문헌 공통 + 개별 제약
+#######################################################################
+
+pac:BookShape a sh:NodeShape ;
+    sh:targetClass bibo:Book ;
+    sh:property [
+        sh:path pac:documentTitle ; sh:minCount 1 ; sh:datatype xsd:string ;
+        sh:message "시집은 제목(pac:documentTitle)을 가져야 한다." ] ;
+    sh:property [
+        sh:path pac:hasAuthor ; sh:minCount 1 ; sh:class foaf:Person ;
+        sh:message "시집의 저자(pac:hasAuthor)는 사람이어야 한다." ] ;
+    sh:property [
+        sh:path bibo:isbn13 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:pattern "^[0-9]{13}$" ;
+        sh:message "ISBN-13 은 숫자 13자리여야 한다." ] .
+
+pac:PoemShape a sh:NodeShape ;
+    sh:targetClass pac:Poem ;
+    sh:property [
+        sh:path pac:documentTitle ; sh:minCount 1 ; sh:datatype xsd:string ;
+        sh:message "시는 제목을 가져야 한다." ] ;
+    sh:property [
+        sh:path pac:hasAuthor ; sh:minCount 1 ; sh:class foaf:Person ;
+        sh:message "시의 저자는 사람이어야 한다." ] ;
+    sh:property [
+        sh:path dct:isPartOf ; sh:maxCount 1 ; sh:class bibo:Book ;
+        sh:message "시가 수록된 dct:isPartOf 의 값은 시집(bibo:Book)이어야 한다." ] .
+
+pac:ArticleShape a sh:NodeShape ;
+    sh:targetClass bibo:Article ;
+    sh:property [
+        sh:path pac:documentTitle ; sh:minCount 1 ; sh:datatype xsd:string ;
+        sh:message "비평문은 제목을 가져야 한다." ] ;
+    sh:property [
+        sh:path pac:hasAuthor ; sh:minCount 1 ; sh:class foaf:Person ;
+        sh:message "비평문의 저자는 사람이어야 한다." ] ;
+    sh:property [
+        sh:path dct:created ; sh:maxCount 1 ; sh:datatype xsd:date ;
+        sh:message "작성일은 xsd:date 한 개여야 한다." ] ;
+    sh:property [
+        sh:path pac:fullText ; sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype rdf:HTML ;
+        sh:message "비평문 본문(pac:fullText)은 rdf:HTML 한 개여야 한다." ] ;
+    sh:property [
+        sh:path pac:hasQuotation ; sh:minCount 1 ; sh:class pac:Quotation ;
+        sh:message "비평문은 인용을 하나 이상 포함한다." ] ;
+    # --- 본문 <q xml:id> 와 인용 앵커의 정합성(SPARQL 제약) ---
+    # 주의: rdf:HTML 리터럴은 처리계(html5)에 따라 직렬화가 달라진다.
+    #   원본 xml:id="1"  →  rdflib 정규화 시 xml:id=1 (따옴표 제거) 또는 id="1"(접두사 제거) 등.
+    #   정규식 id="?N["> ] 로 따옴표·접두사 유무를 모두 흡수하고, 뒤 경계로 부분숫자 오탐을 막는다.
+    sh:sparql [
+        sh:message "본문 fullText 에 대응하는 (xml:)id 가 없는 인용 앵커가 있다." ;
+        sh:select """
+            SELECT $this ?anchor WHERE {
+                $this <http://example.org/pac#fullText> ?ft ;
+                      <http://example.org/pac#hasQuotation> ?q .
+                ?q <http://www.w3.org/ns/oa#hasBody> ?body .
+                ?body <http://www.w3.org/ns/oa#hasSelector> ?fs .
+                ?fs a <http://www.w3.org/ns/oa#FragmentSelector> ;
+                    <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> ?anchor .
+                FILTER(!REGEX(STR(?ft), CONCAT('id="?', ?anchor, '["> ]')))
+            }
+        """ ] ;
+    sh:sparql [
+        sh:message "한 비평문 안에서 같은 인용 앵커(xml:id)가 둘 이상 쓰였다." ;
+        sh:select """
+            SELECT $this (?anchor AS ?value) WHERE {
+                $this <http://example.org/pac#hasQuotation> ?q .
+                ?q <http://www.w3.org/ns/oa#hasBody>/<http://www.w3.org/ns/oa#hasSelector> ?fs .
+                ?fs a <http://www.w3.org/ns/oa#FragmentSelector> ;
+                    <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> ?anchor .
+            } GROUP BY $this ?anchor HAVING (COUNT(DISTINCT ?q) > 1)
+        """ ] .
+
+#######################################################################
+# 3. 인용 (Web Annotation)
+#######################################################################
+
+pac:QuotationShape a sh:NodeShape ;
+    sh:targetClass pac:Quotation ;
+    # 인용 유형: 직접/간접 정확히 1
+    sh:property [
+        sh:path pac:quotationType ; sh:minCount 1 ; sh:maxCount 1 ;
+        sh:in ( pac:DirectQuotation pac:IndirectQuotation ) ;
+        sh:message "인용은 직접/간접 유형(pac:quotationType) 하나를 가져야 한다." ] ;
+    # 비평문에서 참조되어야 함(고아 인용 금지) — 추론 없이 역경로로 검사
+    sh:property [
+        sh:path [ sh:inversePath pac:hasQuotation ] ; sh:minCount 1 ;
+        sh:message "인용은 어떤 비평문의 pac:hasQuotation 으로 참조되어야 한다." ] ;
+    # body: 정확히 1, BodyShape 충족
+    sh:property [
+        sh:path oa:hasBody ; sh:minCount 1 ; sh:maxCount 1 ; sh:node pac:BodyShape ;
+        sh:message "인용은 본문 표지(oa:hasBody) 하나를 가진다." ] ;
+    # target: 1개 이상, TargetShape 충족
+    sh:property [
+        sh:path oa:hasTarget ; sh:minCount 1 ; sh:node pac:TargetShape ;
+        sh:message "인용은 인용 대상(oa:hasTarget)을 하나 이상 가진다." ] ;
+    # 비연속(대상 2↑)이면 각 대상에 순서(pac:targetOrder) 권장
+    sh:sparql [
+        sh:severity sh:Warning ;
+        sh:message "비연속 인용(대상 2개 이상)에는 각 대상에 pac:targetOrder 부여를 권장한다." ;
+        sh:select """
+            SELECT $this WHERE {
+                $this <http://www.w3.org/ns/oa#hasTarget> ?t1, ?t2 .
+                FILTER(?t1 != ?t2)
+                FILTER NOT EXISTS { ?t1 <http://example.org/pac#targetOrder> ?o }
+            }
+        """ ] .
+
+# body = 비평문 속 인용 표지
+pac:BodyShape a sh:NodeShape ;
+    sh:property [
+        sh:path oa:hasSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:class bibo:Article ;
+        sh:message "본문 표지의 출처(oa:hasSource)는 비평문이어야 한다." ] ;
+    sh:property [
+        sh:path oa:hasSelector ; sh:minCount 1 ;
+        sh:message "본문 표지는 선택자(oa:hasSelector)를 하나 이상 가진다." ] ;
+    # FragmentSelector(xml:id) 하나 이상
+    sh:property [
+        sh:path oa:hasSelector ;
+        sh:qualifiedValueShape [
+            sh:class oa:FragmentSelector ;
+            sh:property [ sh:path rdf:value ; sh:minCount 1 ; sh:datatype xsd:string ] ] ;
+        sh:qualifiedMinCount 1 ;
+        sh:message "본문 표지에는 xml:id 를 가리키는 oa:FragmentSelector(rdf:value 포함)가 필요하다." ] .
+
+# target = 원시 속 인용 대상
+pac:TargetShape a sh:NodeShape ;
+    sh:property [
+        sh:path oa:hasSource ; sh:minCount 1 ; sh:maxCount 1 ;
+        sh:or ( [ sh:class pac:Poem ] [ sh:class bibo:Book ] ) ;
+        sh:message "인용 대상의 출처는 시(pac:Poem) 또는 시집(bibo:Book)이어야 한다." ] ;
+    sh:property [
+        sh:path oa:hasSelector ; sh:minCount 1 ;
+        sh:message "인용 대상은 선택자(oa:hasSelector)를 하나 이상 가진다." ] ;
+    sh:property [
+        sh:path pac:targetOrder ; sh:maxCount 1 ; sh:datatype xsd:positiveInteger ;
+        sh:message "pac:targetOrder 는 양의 정수 한 개여야 한다." ] ;
+    # 연/행 선택자가 있으면 TextSelectionShape 충족(있을 때만)
+    sh:property [
+        sh:path oa:hasSelector ;
+        sh:qualifiedValueShape [ sh:class pac:TextSelection ] ;
+        sh:qualifiedMinCount 1 ; sh:severity sh:Warning ;
+        sh:message "인용 대상에는 연/행 선택자(pac:TextSelection)가 권장된다." ] .
+
+#######################################################################
+# 4. 선택자
+#######################################################################
+
+pac:TextSelectionShape a sh:NodeShape ;
+    sh:targetClass pac:TextSelection ;
+    sh:property [
+        sh:path pac:startStanza ; sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:positiveInteger ;
+        sh:message "선택 영역은 시작 연(pac:startStanza) 하나를 가져야 한다." ] ;
+    sh:property [
+        sh:path pac:endStanza ; sh:maxCount 1 ; sh:datatype xsd:positiveInteger ] ;
+    sh:property [
+        sh:path pac:startLine ; sh:maxCount 1 ; sh:datatype xsd:positiveInteger ] ;
+    sh:property [
+        sh:path pac:endLine ; sh:maxCount 1 ; sh:datatype xsd:positiveInteger ] ;
+    # 끝 연 >= 시작 연
+    sh:sparql [
+        sh:message "끝 연(endStanza)은 시작 연(startStanza)보다 작을 수 없다." ;
+        sh:select """
+            SELECT $this WHERE {
+                $this <http://example.org/pac#startStanza> ?s ;
+                      <http://example.org/pac#endStanza> ?e .
+                FILTER(?e < ?s)
+            }
+        """ ] .
+
+pac:TextQuoteSelectorShape a sh:NodeShape ;
+    sh:targetClass oa:TextQuoteSelector ;
+    sh:property [
+        sh:path oa:exact ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:message "인용문구 선택자는 정확 문구(oa:exact) 하나를 가져야 한다." ] .
+
+pac:FragmentSelectorShape a sh:NodeShape ;
+    sh:targetClass oa:FragmentSelector ;
+    sh:property [
+        sh:path rdf:value ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+        sh:message "조각 선택자는 조각 값(rdf:value = xml:id) 하나를 가져야 한다." ] ;
+    sh:property [
+        sh:path dct:conformsTo ; sh:nodeKind sh:IRI ; sh:severity sh:Warning ;
+        sh:message "조각 선택자에는 dct:conformsTo(조각 규격) 표기가 권장된다." ] .
