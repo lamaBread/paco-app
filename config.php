@@ -48,13 +48,31 @@ return [
         'oa'   => 'http://www.w3.org/ns/oa#',
         'wd'   => 'http://www.wikidata.org/entity/',
         'wdt'  => 'http://www.wikidata.org/prop/direct/',
+        // 국가서지LOD(국립중앙도서관) 자원 + ISNI — owl:sameAs 외부 링크가 축약되도록.
+        'nlk'  => 'http://lod.nl.go.kr/resource/',
+        'isni' => 'http://www.isni.org/isni/',
         'owl'  => 'http://www.w3.org/2002/07/owl#',
         'rdf'  => 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
         'rdfs' => 'http://www.w3.org/2000/01/rdf-schema#',
         'xsd'  => 'http://www.w3.org/2001/XMLSchema#',
     ],
 
-    // ---- Wikidata 프리페치 ----
+    // ---- 추론 출처: 국가서지LOD(기본) → Wikidata(폴백) ----
+    // 시인 프로파일은 국립중앙도서관 국가서지LOD 를 우선으로 끌어오고, 국가서지LOD 에 없거나
+    // 정보가 부족한 부분(비슷한 시인·사조·수상·거주지 등)은 Wikidata 로 보강한다.
+
+    // 국가서지LOD (국립중앙도서관, lod.nl.go.kr) — '기본' 출처.
+    'nllod' => [
+        // SPARQL 엔드포인트(이름 검색용). 결과 포맷은 Accept 헤더로만 제어된다.
+        'endpoint'   => 'https://lod.nl.go.kr/sparql',
+        // 자원 전체 RDF 취득용 — /data/<KAC…id>?output=rdfxml (바운드 주어 SPARQL 은 엔진 버그로
+        // 실패하므로, 선택한 저자의 전체 프로파일은 이 RDF/XML 로 받아 파싱한다).
+        'data_base'  => 'https://lod.nl.go.kr/data/',
+        'user_agent' => 'PACO/0.3 (poem-and-criticism archive; educational)',
+        'timeout'    => 25,
+    ],
+
+    // ---- Wikidata 프리페치 (폴백/보강 출처) ----
     'wikidata' => [
         'endpoint'   => 'https://query.wikidata.org/sparql',
         'user_agent' => 'PACO/0.1 (poem-and-criticism archive; educational)',

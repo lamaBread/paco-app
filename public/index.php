@@ -18,6 +18,7 @@ require __DIR__ . '/../src/Settings.php';
 require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
+require __DIR__ . '/../src/NlLod.php';
 require __DIR__ . '/../src/Updater.php';
 require __DIR__ . '/../src/render.php';
 require __DIR__ . '/../src/pages_common.php';
@@ -56,7 +57,9 @@ try {
             $id = $repo->savePerson([
                 'id' => post('id'), 'name' => post('name'),
                 'is_poet' => isset($_POST['is_poet']), 'is_critic' => isset($_POST['is_critic']),
-                'same_as' => post('same_as'),
+                'same_as' => post('same_as'),   // Wikidata IRI
+                'nl_uri'  => post('nl_uri'),     // 국가서지LOD 자원 URI
+                'isni'    => post('isni'),        // ISNI 코드
             ]);
             redirect('people', [], '인물을 저장했습니다.');
 
@@ -133,10 +136,17 @@ try {
             redirect('articles/edit', ['id' => $req['article_id'] ?? ''], '인용을 삭제했습니다.');
 
         case 'insights/refresh':
-            $wd = new Wikidata($repo, $cfg);
+            // 기본 출처(국가서지LOD) 먼저 — 갱신하며 NL 의 owl:sameAs 로 Wikidata 도 자동 연결.
+            $nl  = new NlLod($repo, $cfg);
+            $nls = $nl->refreshAll();
+            // 폴백/보강 출처(Wikidata) — NL 단계가 채운 same_as 까지 반영해 질의.
+            $wd  = new Wikidata($repo, $cfg);
             $sum = $wd->refreshAll();
-            $msg = "Wikidata 갱신: 시인 {$sum['poets']}명 · 사실 {$sum['facts']}건 · 비슷한 시인 {$sum['similar']}건.";
-            if (!empty($sum['errors'])) $msg .= ' (오류: ' . implode(' / ', array_slice($sum['errors'], 0, 3)) . ')';
+            $msg = "국가서지LOD: 시인 {$nls['poets']}명 · 사실 {$nls['facts']}건"
+                . ($nls['linked'] ? " · Wikidata 자동연결 {$nls['linked']}명" : '')
+                . ". / Wikidata: 시인 {$sum['poets']}명 · 사실 {$sum['facts']}건 · 비슷한 시인 {$sum['similar']}건.";
+            $errs = array_merge($nls['errors'] ?? [], $sum['errors'] ?? []);
+            if ($errs) $msg .= ' (오류: ' . implode(' / ', array_slice($errs, 0, 3)) . ')';
             redirect('insights', [], $msg);
 
         case 'settings/save':

@@ -21,6 +21,7 @@ require __DIR__ . '/../src/Settings.php';
 require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
+require __DIR__ . '/../src/NlLod.php';
 require __DIR__ . '/../src/render.php';
 require __DIR__ . '/../src/pages_common.php';
 require __DIR__ . '/../src/pages_article.php';

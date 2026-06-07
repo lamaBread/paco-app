@@ -34,17 +34,21 @@ final class Repo
     public function savePerson(array $d): string
     {
         $id = $d['id'] ?: ('person_' . paco_slug($d['name']));
+        // ISNI 는 표준 16자리로 정규화해 저장(공백·하이픈·isni.org URI 입력도 허용).
+        $isni = NlLod::normalizeIsni($d['isni'] ?? '');
         $st = $this->db->prepare(
-            'INSERT INTO person (id,name,is_poet,is_critic,same_as,note)
-             VALUES (:id,:name,:p,:c,:s,:note)
+            'INSERT INTO person (id,name,is_poet,is_critic,same_as,nl_uri,isni,note)
+             VALUES (:id,:name,:p,:c,:s,:nl,:isni,:note)
              ON CONFLICT(id) DO UPDATE SET
-               name=:name, is_poet=:p, is_critic=:c, same_as=:s, note=:note'
+               name=:name, is_poet=:p, is_critic=:c, same_as=:s, nl_uri=:nl, isni=:isni, note=:note'
         );
         $st->execute([
             ':id' => $id, ':name' => $d['name'],
             ':p' => !empty($d['is_poet']) ? 1 : 0,
             ':c' => !empty($d['is_critic']) ? 1 : 0,
-            ':s' => $d['same_as'] !== '' ? $d['same_as'] : null,
+            ':s' => ($d['same_as'] ?? '') !== '' ? $d['same_as'] : null,
+            ':nl' => ($d['nl_uri'] ?? '') !== '' ? trim($d['nl_uri']) : null,
+            ':isni' => $isni,
             ':note' => $d['note'] ?? null,
         ]);
         return $id;

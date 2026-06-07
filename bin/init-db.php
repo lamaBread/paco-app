@@ -16,6 +16,7 @@ $cfg = require __DIR__ . '/../config.php';
 require __DIR__ . '/../src/helpers.php';
 require __DIR__ . '/../src/Database.php';
 require __DIR__ . '/../src/Repo.php';
+require __DIR__ . '/../src/NlLod.php';
 
 if (in_array('--fresh', $argv, true) && is_file($cfg['db_path'])) {
     foreach ([$cfg['db_path'], $cfg['db_path'] . '-wal', $cfg['db_path'] . '-shm'] as $f) {
@@ -28,8 +29,13 @@ $pdo  = Database::connect($cfg['db_path']);
 $repo = new Repo($pdo);
 
 // ---- 인물 ----
+// 황인찬: 3중 식별 데모 — 국가서지LOD(기본)·ISNI·Wikidata(폴백). 국가서지LOD 자원
+// KAC201300746(직업 '시인', ISNI 0000000473671307)에는 Wikidata 링크가 없어 Wikidata 는
+// 별도로 연결한다(현대 시인은 NL→Wikidata 자동연결이 비는 일반적 사례).
 $repo->savePerson(['id' => 'person_hwang-inchan', 'name' => '황인찬',
     'is_poet' => true, 'is_critic' => false,
+    'nl_uri'  => 'http://lod.nl.go.kr/resource/KAC201300746',
+    'isni'    => '0000000473671307',
     'same_as' => 'http://www.wikidata.org/entity/Q12625888']);
 $repo->savePerson(['id' => 'person_me', 'name' => '나',
     'is_poet' => false, 'is_critic' => true, 'same_as' => '']);

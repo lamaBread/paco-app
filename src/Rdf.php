@@ -66,8 +66,19 @@ final class Rdf
             if ((int) $p['is_critic']) $g->add($s, $a, $g->curie('pac:Critic'));
             if (!$p['is_poet'] && !$p['is_critic']) $g->add($s, $a, $g->curie('foaf:Person'));
             $g->add($s, 'foaf:name', self::lit($p['name']));
-            if (!empty($p['same_as'])) {
-                $g->add($s, 'owl:sameAs', self::iri($p['same_as']));
+            // 외부 LOD 동일인 링크는 모두 owl:sameAs 로 발행한다(다출처):
+            //   Wikidata(same_as) · 국가서지LOD(nl_uri) · ISNI(코드 → isni.org URI).
+            $seen = [];
+            foreach ([$p['same_as'] ?? null, $p['nl_uri'] ?? null] as $link) {
+                $link = $link !== null ? trim((string) $link) : '';
+                if ($link !== '' && !isset($seen[$link])) {
+                    $g->add($s, 'owl:sameAs', self::iri($link));
+                    $seen[$link] = true;
+                }
+            }
+            if (!empty($p['isni'])) {
+                $isniUri = NlLod::isniUri($p['isni']);
+                if (!isset($seen[$isniUri])) $g->add($s, 'owl:sameAs', self::iri($isniUri));
             }
         }
 

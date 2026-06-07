@@ -11,6 +11,36 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (작업 중)
 
+## [0.3.0] — 2026-06-08
+### Added
+- **국가서지LOD(국립중앙도서관, lod.nl.go.kr) 연동 — 시인 식별·추론의 '기본' 출처.** 인물에
+  국가서지LOD 자원 URI(`person.nl_uri`)와 **ISNI**(`person.isni`) 를 연결한다. 인물 추가/수정
+  화면에서 **이름으로 국가서지LOD 저자 검색→후보 선택** 시 자원 URI·ISNI·생몰년이 자동 입력되고,
+  국가서지LOD 의 `owl:sameAs` 에 Wikidata 링크가 있으면 **Wikidata 도 자동 연결**된다. 동명이인이
+  많아 후보는 직업(`schema:jobTitle`)으로 '시인'을 표시한다. (`src/NlLod.php`)
+  - SPARQL 엔드포인트(`https://lod.nl.go.kr/sparql`)로 이름 검색, 선택한 저자의 전체 프로파일은
+    `/data/<id>?output=rdfxml`(RDF/XML)로 받아 파싱(엔진 특성상 바운드 주어 SPARQL·birthYear 혼합
+    질의가 실패하므로). JSON 리터럴의 `~` 접미사 제거 등 엔진 보정 포함.
+- **추론 폴백(국가서지LOD 기본 → Wikidata 폴백/보강).** 시인 프로파일(생몰년·직업·활동분야)은
+  국가서지LOD 를 우선 표시하고, 국가서지LOD 에 없거나 부족한 관계 추론(비슷한 시인·사조·수상·
+  거주지 등)은 Wikidata 로 보강한다. *추론 질의*·*인물 상세*에 출처 배지를 표시. 프리페치/갱신은
+  두 출처를 한 번에 수행(`nl_fact` 캐시 + 기존 `wikidata_fact`/`wikidata_similar`).
+- **LOD 발행 확장.** 인물의 외부 동일인 링크를 모두 `owl:sameAs` 로 발행:
+  Wikidata(`nl_uri` 와 함께) · 국가서지LOD(`nlk:`) · ISNI(`isni:` = `http://www.isni.org/isni/<코드>`).
+  접두사 `nlk`·`isni` 추가로 Turtle/JSON-LD 가 축약된다. (온톨로지 TBox 무변경 — `owl:sameAs` 만 사용)
+
+### Changed
+- 인물 목록/상세의 'Wikidata' 칸을 **식별자 칩**(WD·NL·ISNI)으로 일반화. *추론 질의* 페이지를
+  '국가서지LOD 기본 · Wikidata 폴백' 구조로 개편.
+
+### 데이터 마이그레이션
+- **user_version 2 → 3** (모두 *추가형* — 기존 행 무변형): ① `person` 에 `nl_uri`·`isni` 컬럼 추가
+  (`ALTER TABLE ADD COLUMN`, 컬럼 존재 가드로 멱등) ② 국가서지LOD 프리페치 캐시 `nl_fact` 테이블 +
+  인덱스 추가. 변형 단계가 없어 행수는 그대로 보존되며, 변형 전 자동 백업(`data/backups/`) 정책도 동일.
+- 검증: v0.1.0·v0.2.0 fixture 에서 `paco test-migration` 통과(행수 보존 · 전 라우트 HTTP 200 ·
+  치명 오류 없음). 네트워크 질의(국가서지LOD/Wikidata)는 사용자가 *프리페치/검색* 을 누를 때만
+  일어나므로 일반 페이지 로드·호환성 테스트는 오프라인에서도 안전하다.
+
 ## [0.2.0] — 2026-06-08
 ### Added
 - **자가 업데이트(원클릭) 토대** — GitHub 공개 repo(`lamaBread/paco-app`)의 **버전 태그** 기준으로
@@ -52,6 +82,7 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 - 최초 버전 — 마이그레이션 대상 없음. 이 버전의 시드 DB가 이후 버전 호환성
   테스트의 **기준 fixture**(`paco-harness/fixtures/0.1.0/`)가 된다.
 
-[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lamaBread/paco-app/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lamaBread/paco-app/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lamaBread/paco-app/releases/tag/v0.1.0

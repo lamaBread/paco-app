@@ -52,9 +52,11 @@ HTML;
 // ======================================================== 추론 질의
 function page_insights(Repo $repo, array $cfg): array
 {
+    $nl = new NlLod($repo, $cfg);
     $wd = new Wikidata($repo, $cfg);
     $poets = $repo->critiquedPoets();
     $last = $wd->lastFetched();
+    $nlLast = $nl->lastFetched();
 
     // 7.4 — 내가 비평한 시인 + 빈도
     $freqRows = '';
@@ -79,12 +81,14 @@ function page_insights(Repo $repo, array $cfg): array
     }
     if ($recHtml === '') $recHtml = '<p class="muted">추천할 시인이 아직 없습니다. 시인에 owl:sameAs 를 연결하고 프리페치하면, 내가 비평한 시인들과 직업·사조를 공유하지만 아직 비평하지 않은 시인이 여기 모입니다.</p>';
 
-    // 7.5/7.6 — 시인별 확장 프로파일 + 비슷한 시인 (캐시)
+    // 7.5/7.6 — 시인별 확장 프로파일: 국가서지LOD(기본) + Wikidata(폴백·비슷한 시인)
     $detail = '';
     foreach ($poets as $p) {
+        $nlRows = $nl->factsByPerson($p['id']);
         $facts = $wd->factsByPerson($p['id']);
         $sim = $wd->similarByPerson($p['id']);
-        if (!$facts && !$sim) continue;
+        if (!$nlRows && !$facts && !$sim) continue;
+        $nlHtml = fact_table($nlRows);
         $byProp = [];
         foreach ($facts as $f) $byProp[$f['prop_label'] ?: $f['prop_pid']][] = $f['value_label'] ?: $f['value_iri'];
         $factHtml = '';
@@ -94,12 +98,14 @@ function page_insights(Repo $repo, array $cfg): array
             $t = $s['via_label'] ? ' title="공유: ' . h($s['via_label']) . '"' : '';
             $simHtml .= '<a class="chip"' . $t . ' href="' . h($s['similar_iri']) . '" target="_blank" rel="noopener">' . h($s['similar_label'] ?: $s['similar_iri']) . '</a>';
         }
-        $detail .= '<div class="insight-card"><h3>' . h($p['name']) . '</h3>'
-            . ($factHtml ? '<table class="kv">' . $factHtml . '</table>' : '')
-            . ($simHtml ? '<div class="sub">비슷한 시인 <span class="muted">(직업·사조 공유)</span></div><div class="chips">' . $simHtml . '</div>' : '')
+        $src = $nlRows ? '<span class="tag nlsrc">국가서지LOD</span>' : '<span class="tag wdsrc">Wikidata 폴백</span>';
+        $detail .= '<div class="insight-card"><h3>' . h($p['name']) . ' ' . $src . '</h3>'
+            . ($nlHtml ? '<div class="sub">국가서지LOD 프로파일</div>' . $nlHtml : '')
+            . ($factHtml ? '<div class="sub">Wikidata 보강</div><table class="kv">' . $factHtml . '</table>' : '')
+            . ($simHtml ? '<div class="sub">비슷한 시인 <span class="muted">(직업·사조 공유 — Wikidata)</span></div><div class="chips">' . $simHtml . '</div>' : '')
             . '</div>';
     }
-    if ($detail === '') $detail = '<p class="muted">캐시된 Wikidata 결과가 없습니다. 위 버튼으로 프리페치하세요(네트워크 필요).</p>';
+    if ($detail === '') $detail = '<p class="muted">캐시된 결과가 없습니다. 위 버튼으로 프리페치하세요(네트워크 필요).</p>';
 
     // 친화도 — 내가 비평한 시인들끼리 공유하는 속성(직업·사조·국적 등)
     $affHtml = '';
@@ -114,9 +120,12 @@ function page_insights(Repo $repo, array $cfg): array
     $refreshBtn = '';
     if (!is_static()) {
         $refreshUrl = h(url('insights/refresh'));
-        $refreshBtn = '<a class="btn primary" href="' . $refreshUrl . '" data-confirm="Wikidata 공개 SPARQL 에 질의해 캐시를 갱신합니다. 계속할까요?">Wikidata 프리페치 / 갱신</a>';
+        $refreshBtn = '<a class="btn primary" href="' . $refreshUrl . '" data-confirm="국가서지LOD(기본)·Wikidata(폴백) 공개 엔드포인트에 질의해 캐시를 갱신합니다. 계속할까요?">프리페치 / 갱신</a>';
     }
-    $lastHtml = $last ? '<span class="muted">마지막 갱신: ' . h($last) . '</span>' : '<span class="muted">아직 갱신 안 됨</span>';
+    $lastBits = [];
+    if ($nlLast) $lastBits[] = '국가서지LOD ' . h($nlLast);
+    if ($last)   $lastBits[] = 'Wikidata ' . h($last);
+    $lastHtml = $lastBits ? '<span class="muted">마지막 갱신: ' . implode(' · ', $lastBits) . '</span>' : '<span class="muted">아직 갱신 안 됨</span>';
 
     $q74 = h(<<<'SPARQL'
 SELECT ?poet (COUNT(?article) AS ?n) WHERE {
@@ -153,8 +162,8 @@ SPARQL);
 
     $body = <<<HTML
 <section class="hero small">
-  <h1>추론 질의 <small>— Wikidata 연합</small></h1>
-  <p class="lead">owl:sameAs 로 연결된 시인을 통해 외부 LOD 의 사실을 끌어와 비평 활동을 돕습니다. 결과는 프리페치 캐시에서 옵니다.</p>
+  <h1>추론 질의 <small>— 국가서지LOD 기본 · Wikidata 폴백</small></h1>
+  <p class="lead">owl:sameAs 로 연결된 시인의 외부 LOD 사실을 끌어와 비평 활동을 돕습니다. <b>국가서지LOD(국립중앙도서관)</b>를 기본 출처로 권위 있는 프로파일(생몰년·직업·활동분야)을 받고, 국가서지LOD에 없거나 부족한 관계 추론(비슷한 시인·사조·수상 등)은 <b>Wikidata</b>로 보강합니다. 결과는 프리페치 캐시에서 옵니다.</p>
   <div class="toolbar">{$refreshBtn} {$lastHtml}</div>
 </section>
 
@@ -176,7 +185,7 @@ SPARQL);
 
 <section class="panel">
   <div class="panel-head"><h2>7.5 / 7.6 — 시인 프로파일 · 비슷한 시인</h2></div>
-  <p class="note">출생·국적·사조·장르·영향·대표작 등 확장 프로파일과, 직업·사조를 공유하는 비슷한 시인(칩에 마우스를 올리면 공유 근거).</p>
+  <p class="note">시인별로 <b>국가서지LOD</b> 권위 프로파일(생몰년·직업·활동분야)을 먼저, 그 다음 <b>Wikidata</b> 보강(출생·국적·사조·수상·대표작)과 직업·사조를 공유하는 비슷한 시인을 보여줍니다. 국가서지LOD 캐시가 없는 시인은 Wikidata로 폴백합니다.</p>
   <div class="insights">{$detail}</div>
   <details class="sparql"><summary>SPARQL (7.5 비슷한 시인 · 7.6 프로파일)</summary><pre class="code">{$q75}</pre></details>
 </section>

@@ -59,6 +59,22 @@ HTML;
 }
 
 // ================================================================== 인물
+/** 인물의 외부 식별자(Wikidata · 국가서지LOD · ISNI)를 작은 칩 링크로. */
+function identifier_chips(array $p): string
+{
+    $chips = '';
+    if (!empty($p['same_as'])) {
+        $chips .= '<a class="idchip wd" href="' . h($p['same_as']) . '" target="_blank" rel="noopener" title="Wikidata">WD ' . h(Wikidata::qid($p['same_as']) ?? '') . '</a>';
+    }
+    if (!empty($p['nl_uri'])) {
+        $chips .= '<a class="idchip nl" href="' . h($p['nl_uri']) . '" target="_blank" rel="noopener" title="국가서지LOD">NL ' . h(NlLod::resourceId($p['nl_uri']) ?? '') . '</a>';
+    }
+    if (!empty($p['isni'])) {
+        $chips .= '<a class="idchip isni" href="' . h(NlLod::isniUri($p['isni'])) . '" target="_blank" rel="noopener" title="ISNI">ISNI</a>';
+    }
+    return $chips ?: '<span class="muted">—</span>';
+}
+
 function page_people(Repo $repo, array $cfg, array $req): array
 {
     $edit = $req['edit'] ?? '';
@@ -68,30 +84,67 @@ function page_people(Repo $repo, array $cfg, array $req): array
         $roles = [];
         if ($p['is_poet']) $roles[] = badge('시인', 'poet');
         if ($p['is_critic']) $roles[] = badge('비평자', 'critic');
-        $wd = $p['same_as']
-            ? '<a class="wd" href="' . h($p['same_as']) . '" target="_blank" rel="noopener">' . h(Wikidata::qid($p['same_as']) ?? 'Wikidata') . '</a>'
-            : '<span class="muted">—</span>';
         $act = is_static() ? '' :
             '<a class="mini" href="' . h(url('people', ['edit' => $p['id']])) . '">수정</a> '
             . '<a class="mini danger" href="' . h(url('people/delete', ['id' => $p['id']])) . '" data-confirm="삭제할까요?">삭제</a>';
         $rows .= '<tr><td><a href="' . h(url('people/view', ['id' => $p['id']])) . '">' . h($p['name']) . '</a></td>'
-            . '<td>' . implode(' ', $roles) . '</td><td>' . $wd . '</td><td class="actions">' . $act . '</td></tr>';
+            . '<td>' . implode(' ', $roles) . '</td><td><div class="idchips">' . identifier_chips($p) . '</div></td><td class="actions">' . $act . '</td></tr>';
     }
     if ($rows === '') $rows = '<tr><td colspan="4" class="muted">등록된 인물이 없습니다.</td></tr>';
 
     $form = '';
     if (!is_static()) {
+        // ── 폼 프리필: 기존 인물(수정) → 국가서지LOD 자동완성(nl_fill) 순으로 덧씌움 ──
+        $prefill = [
+            'id' => $cur['id'] ?? '', 'name' => $cur['name'] ?? '',
+            'is_poet' => $cur ? !empty($cur['is_poet']) : true,   // 새 인물은 시인 기본
+            'is_critic' => $cur ? !empty($cur['is_critic']) : false,
+            'same_as' => $cur['same_as'] ?? '', 'nl_uri' => $cur['nl_uri'] ?? '', 'isni' => $cur['isni'] ?? '',
+        ];
+        $fillNote = '';
+        $nlFill = trim((string) ($req['nl_fill'] ?? ''));
+        if ($nlFill !== '') {
+            $nl = new NlLod($repo, $cfg);
+            $prof = $nl->fetchProfile('http://lod.nl.go.kr/resource/' . $nlFill);
+            if ($prof) {
+                $prefill['nl_uri'] = 'http://lod.nl.go.kr/resource/' . $nlFill;
+                if ($prefill['name'] === '' && $prof['name']) $prefill['name'] = $prof['name'];
+                if ($prof['isni']) $prefill['isni'] = $prof['isni'];
+                if ($prefill['same_as'] === '' && $prof['wikidata']) $prefill['same_as'] = $prof['wikidata'];
+                if (!$cur) $prefill['is_poet'] = (bool) array_filter($prof['jobs'], fn($j) => mb_strpos($j, '시인') !== false) ?: $prefill['is_poet'];
+                $got = [];
+                if ($prof['isni']) $got[] = 'ISNI';
+                if ($prof['birth'] || $prof['death']) $got[] = '생몰년';
+                if ($prof['jobs']) $got[] = '직업';
+                if ($prof['wikidata']) $got[] = 'Wikidata 링크';
+                $life = ($prof['birth'] || $prof['death']) ? ' · ' . h(($prof['birth'] ?? '') . '–' . ($prof['death'] ?? '')) : '';
+                $fillNote = '<p class="fill-note ok">국가서지LOD <b>' . h($nlFill) . '</b> 에서 가져옴: '
+                    . h(implode(', ', $got) ?: '기본 정보') . $life
+                    . ' <span class="muted">— 확인 후 저장하세요.</span></p>';
+            } else {
+                $fillNote = '<p class="fill-note danger">국가서지LOD 조회에 실패했습니다(네트워크 또는 자원 없음). 값을 직접 입력하세요.</p>';
+            }
+        }
+
         $saveUrl = h(url('people/save'));
         $cancelUrl = h(url('people'));
-        $id = h($cur['id'] ?? '');
-        $name = h($cur['name'] ?? '');
-        $poet = !empty($cur['is_poet']) ? ' checked' : ($cur ? '' : ' checked');
-        $critic = !empty($cur['is_critic']) ? ' checked' : '';
-        $same = h($cur['same_as'] ?? '');
+        $id = h($prefill['id']);
+        $name = h($prefill['name']);
+        $poet = $prefill['is_poet'] ? ' checked' : '';
+        $critic = $prefill['is_critic'] ? ' checked' : '';
+        $same = h($prefill['same_as']);
+        $nlUriV = h($prefill['nl_uri']);
+        $isniV = h($prefill['isni']);
         $heading = $cur ? '인물 수정' : '인물 추가';
+
+        // ── 국가서지LOD 이름 검색(자동완성) 패널 ──
+        $searchPanel = nl_search_panel($repo, $cfg, $req, (string) $edit);
+
         $form = <<<HTML
 <section class="panel">
   <div class="panel-head"><h2>{$heading}</h2></div>
+  {$searchPanel}
+  {$fillNote}
   <form method="post" action="{$saveUrl}" class="form">
     <input type="hidden" name="id" value="{$id}">
     <label>이름 <span class="req">*</span><input name="name" required value="{$name}" placeholder="예: 황인찬"></label>
@@ -99,10 +152,18 @@ function page_people(Repo $repo, array $cfg, array $req): array
       <label class="chk"><input type="checkbox" name="is_poet" value="1"{$poet}> 시인 (pac:Poet)</label>
       <label class="chk"><input type="checkbox" name="is_critic" value="1"{$critic}> 비평자 (pac:Critic)</label>
     </div>
-    <label>owl:sameAs — Wikidata IRI
-      <input name="same_as" value="{$same}" placeholder="http://www.wikidata.org/entity/Q12625888">
-      <small>시인을 외부 LOD 와 연결하면 추론 질의(거주지·수상·직업·비슷한 시인)가 가능해집니다.</small>
-    </label>
+    <fieldset class="idset">
+      <legend>외부 LOD 식별자 <small>— owl:sameAs 로 발행되어 추론(국가서지LOD 기본 · Wikidata 폴백)에 쓰입니다</small></legend>
+      <label>국가서지LOD 자원 URI <small>(국립중앙도서관, 기본 출처)</small>
+        <input name="nl_uri" value="{$nlUriV}" placeholder="http://lod.nl.go.kr/resource/KAC201300746">
+      </label>
+      <label>ISNI <small>(국제 표준 이름 식별자 · 16자리. 공백/하이픈 무관)</small>
+        <input name="isni" value="{$isniV}" placeholder="0000 0004 7367 1307">
+      </label>
+      <label>Wikidata IRI <small>(폴백/보강 출처 — 비슷한 시인·사조·수상 등)</small>
+        <input name="same_as" value="{$same}" placeholder="http://www.wikidata.org/entity/Q12625888">
+      </label>
+    </fieldset>
     <div class="form-actions"><button class="btn primary" type="submit">저장</button>
       <a class="btn" href="{$cancelUrl}">취소</a></div>
   </form>
@@ -113,7 +174,7 @@ HTML;
 <section class="panel">
   <div class="panel-head"><h2>인물 — 시인 · 비평자</h2></div>
   <table class="grid">
-    <thead><tr><th>이름</th><th>역할</th><th>Wikidata</th><th class="actions">　</th></tr></thead>
+    <thead><tr><th>이름</th><th>역할</th><th>식별자</th><th class="actions">　</th></tr></thead>
     <tbody>{$rows}</tbody>
   </table>
 </section>
@@ -122,10 +183,86 @@ HTML;
     return ['인물', $body];
 }
 
+/** 국가서지LOD 이름 검색 박스 + (nlq 가 있으면) 후보 목록. 후보 선택 시 폼이 자동완성된다. */
+function nl_search_panel(Repo $repo, array $cfg, array $req, string $editId): string
+{
+    $nlq = trim((string) ($req['nlq'] ?? ''));
+    $action = h(url('people'));
+    $editHidden = $editId !== '' ? '<input type="hidden" name="edit" value="' . h($editId) . '">' : '';
+    $qv = h($nlq);
+
+    $results = '';
+    if ($nlq !== '') {
+        $nl = new NlLod($repo, $cfg);
+        $cands = $nl->searchByName($nlq);
+        if (!$cands) {
+            $results = '<p class="muted">‘' . h($nlq) . '’ 에 대한 국가서지LOD 저자 후보가 없습니다(네트워크 오류이거나 미수록).</p>';
+        } else {
+            $items = '';
+            foreach (array_slice($cands, 0, 30) as $c) {
+                $fillUrl = h(url('people', array_filter(['edit' => $editId, 'nl_fill' => $c['id']])));
+                $jobs = '';
+                foreach ($c['jobs'] as $j) {
+                    $cls = (mb_strpos($j, '시인') !== false) ? 'tag poet' : 'tag';
+                    $jobs .= '<span class="' . $cls . '">' . h($j) . '</span> ';
+                }
+                if ($jobs === '') $jobs = '<span class="muted">직업 미상</span>';
+                $poetMark = $c['is_poet'] ? ' is-poet' : '';
+                $items .= '<li class="nl-cand' . $poetMark . '">'
+                    . '<div class="nl-cand-main"><code>' . h($c['id']) . '</code> ' . $jobs . '</div>'
+                    . '<a class="btn mini primary" href="' . $fillUrl . '">이 인물로 채우기</a></li>';
+            }
+            $n = count($cands);
+            $results = '<p class="muted">후보 ' . (int) $n . '명' . ($n > 30 ? ' (상위 30 표시)' : '')
+                . ' — <b>시인</b>을 확인하고 선택하세요(동명이인이 많습니다).</p>'
+                . '<ul class="nl-cands">' . $items . '</ul>';
+        }
+    }
+
+    return <<<HTML
+<div class="nl-search">
+  <form method="get" action="{$action}" class="nl-search-form">
+    <input type="hidden" name="r" value="people">
+    {$editHidden}
+    <input name="nlq" value="{$qv}" placeholder="국가서지LOD에서 시인 찾기 — 이름 입력 (예: 황인찬)">
+    <button class="btn" type="submit">국가서지LOD 검색</button>
+  </form>
+  {$results}
+</div>
+HTML;
+}
+
+/** nl_fact / wikidata_fact 행들을 라벨별로 묶어 kv 표 HTML 로(값에 URI 가 있으면 링크). */
+function fact_table(array $rows): string
+{
+    $groups = [];
+    foreach ($rows as $r) {
+        $lab = $r['prop_label'] ?: ($r['prop_uri'] ?? $r['prop_pid'] ?? '');
+        $groups[$lab][] = $r;
+    }
+    $html = '';
+    foreach ($groups as $lab => $rs) {
+        $vals = [];
+        foreach ($rs as $r) {
+            $iri = $r['value_iri'] ?? null;
+            $txt = $r['value_label'] ?: $iri;
+            if ($iri && preg_match('#^https?://#', (string) $iri)) {
+                $vals[] = '<a href="' . h($iri) . '" target="_blank" rel="noopener">' . h($txt ?: $iri) . '</a>';
+            } elseif ($txt !== null && $txt !== '') {
+                $vals[] = h($txt);
+            }
+        }
+        $vals = array_values(array_unique($vals));
+        if ($vals) $html .= '<tr><th>' . h($lab) . '</th><td>' . implode(', ', $vals) . '</td></tr>';
+    }
+    return $html ? '<table class="kv">' . $html . '</table>' : '';
+}
+
 function page_person_view(Repo $repo, array $cfg, array $req): array
 {
     $p = $repo->person($req['id'] ?? '');
     if (!$p) return ['없음', '<p class="muted">인물을 찾을 수 없습니다.</p>'];
+    $nl = new NlLod($repo, $cfg);
     $wd = new Wikidata($repo, $cfg);
 
     $roles = [];
@@ -144,39 +281,47 @@ function page_person_view(Repo $repo, array $cfg, array $req): array
     }
     $works = $works ?: '<li class="muted">없음</li>';
 
-    $facts = $wd->factsByPerson($p['id']);
-    if ($facts) {
-        $byProp = [];
-        foreach ($facts as $f) $byProp[$f['prop_label'] ?: $f['prop_pid']][] = $f['value_label'] ?: $f['value_iri'];
-        $factHtml = '<table class="kv">';
-        foreach ($byProp as $label => $vals) $factHtml .= '<tr><th>' . h($label) . '</th><td>' . h(implode(', ', $vals)) . '</td></tr>';
-        $factHtml .= '</table>';
-    } else {
-        $factHtml = '<p class="muted">캐시된 Wikidata 사실이 없습니다. <em>추론 질의</em> 탭에서 프리페치하세요.</p>';
-    }
+    // ── 프로파일: 국가서지LOD(기본) → Wikidata(폴백/보강) ──
+    $nlRows = $nl->factsByPerson($p['id']);
+    $wdFacts = $wd->factsByPerson($p['id']);
+    $hasNl = (bool) $nlRows;
 
+    $nlTable = fact_table($nlRows);
+    $nlBlock = $nlTable
+        ? $nlTable
+        : '<p class="muted">국가서지LOD 캐시가 없습니다.'
+            . (!empty($p['nl_uri']) ? ' <em>추론 질의</em> 탭에서 프리페치하세요.' : ' 인물에 국가서지LOD 자원 URI 를 연결하세요.')
+            . '</p>';
+
+    $wdTable = fact_table($wdFacts);
     $simHtml = '';
     foreach (array_slice($wd->similarByPerson($p['id']), 0, 24) as $s) {
         $simHtml .= '<a class="chip" href="' . h($s['similar_iri']) . '" target="_blank" rel="noopener">' . h($s['similar_label'] ?: $s['similar_iri']) . '</a>';
     }
-    $simHtml = $simHtml ?: '<span class="muted">없음</span>';
+    $wdBlock = ($wdTable || $simHtml)
+        ? $wdTable . ($simHtml ? '<div class="sub">비슷한 시인 <span class="muted">(직업·사조 공유 — 국가서지LOD엔 없는 관계 추론)</span></div><div class="chips">' . $simHtml . '</div>' : '')
+        : '<p class="muted">캐시된 Wikidata 사실이 없습니다.' . (empty($p['same_as']) ? ' Wikidata IRI 를 연결하면 비슷한 시인·사조·수상 등을 보강합니다.' : ' <em>추론 질의</em> 탭에서 프리페치하세요.') . '</p>';
 
-    $wdLink = $p['same_as'] ? '<a href="' . h($p['same_as']) . '" target="_blank" rel="noopener">' . h($p['same_as']) . '</a>' : '<span class="muted">연결 없음</span>';
+    $srcLine = $hasNl
+        ? '<span class="tag nlsrc">국가서지LOD 기본</span> 프로파일을 사용합니다. 부족한 관계 추론은 Wikidata 로 보강.'
+        : '국가서지LOD 기록이 없어 <span class="tag wdsrc">Wikidata 폴백</span>을 사용합니다.';
+
+    $idTable = '<table class="kv"><tr><th>역할</th><td>' . $rolesHtml . '</td></tr>'
+        . '<tr><th>외부 식별자 <small>(owl:sameAs)</small></th><td><div class="idchips">' . identifier_chips($p) . '</div></td></tr></table>';
+
     $name = h($p['name']);
     $back = h(url('people'));
     $body = <<<HTML
 <nav class="crumbs"><a href="{$back}">← 인물</a></nav>
 <article class="detail">
   <h1>{$name}</h1>
-  <table class="kv">
-    <tr><th>역할</th><td>{$rolesHtml}</td></tr>
-    <tr><th>owl:sameAs</th><td>{$wdLink}</td></tr>
-  </table>
+  {$idTable}
   <h2>저작</h2><ul class="list">{$works}</ul>
-  <h2>Wikidata 사실 <small>(P551 거주지 · P166 수상 · P106 직업)</small></h2>
-  {$factHtml}
-  <h2>같은 직업으로 묶이는 다른 시인 <small>(시나리오 7.5)</small></h2>
-  <div class="chips">{$simHtml}</div>
+  <p class="note src-note">{$srcLine}</p>
+  <h2>국가서지LOD 프로파일 <small>(국립중앙도서관 — 기본 출처)</small></h2>
+  {$nlBlock}
+  <h2>Wikidata 보강 <small>(폴백 — 비슷한 시인 · 사조 · 수상 등)</small></h2>
+  {$wdBlock}
 </article>
 HTML;
     return [$p['name'], $body];

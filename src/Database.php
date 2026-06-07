@@ -36,7 +36,7 @@ use PDO;
 final class Database
 {
     /** 현재 코드가 기대하는 스키마 단계. 스키마를 바꾸면 +1 하고 migrations() 에 단계 추가. */
-    public const SCHEMA_VERSION = 2;
+    public const SCHEMA_VERSION = 3;
 
     private static ?PDO $pdo = null;
 
@@ -313,6 +313,43 @@ CREATE TABLE IF NOT EXISTS app_setting (
 );
 SQL);
             },
+
+            // ── 3 (v0.3.0): 시인 식별자를 다출처로 확장 + 국가서지LOD 프리페치 캐시. ──
+            // 시인을 Wikidata 외에 국립중앙도서관 국가서지LOD(lod.nl.go.kr)·ISNI 와도 연결한다.
+            //   person.nl_uri : 국가서지LOD 자원 URI(owl:sameAs) — 추론의 '기본' 출처
+            //   person.isni   : ISNI 코드(16자리). 발행 시 owl:sameAs http://www.isni.org/isni/<코드>
+            //   nl_fact       : 국가서지LOD 프로파일 프리페치 캐시(wikidata_fact 와 평행). NL 우선,
+            //                   부족분은 Wikidata 폴백으로 보강한다.
+            // 모두 '추가형'(컬럼 추가 + 새 테이블)이라 기존 행을 변형하지 않는다.
+            3 => static function (PDO $pdo): void {
+                self::addColumn($pdo, 'person', 'nl_uri', 'TEXT');  // owl:sameAs (국가서지LOD)
+                self::addColumn($pdo, 'person', 'isni',   'TEXT');  // ISNI 코드
+                $pdo->exec(<<<'SQL'
+-- 국가서지LOD(국립중앙도서관) 프로파일 프리페치 캐시
+CREATE TABLE IF NOT EXISTS nl_fact (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id   TEXT NOT NULL REFERENCES person(id) ON DELETE CASCADE,
+    prop_uri    TEXT NOT NULL,              -- 'http://lod.nl.go.kr/ontology/isni' 등
+    prop_label  TEXT,                        -- '직업' '활동분야' '생몰년' 등 한국어 라벨
+    value_iri   TEXT,                        -- 객체가 URI 일 때(owl:sameAs 대상 등)
+    value_label TEXT,                        -- 리터럴 값
+    fetched_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_nlfact_person ON nl_fact(person_id);
+SQL);
+            },
         ];
+    }
+
+    /** SQLite 에 컬럼을 멱등 추가(이미 있으면 무시). ALTER TABLE ADD COLUMN 은 중복 시 오류이므로 가드. */
+    private static function addColumn(PDO $pdo, string $table, string $col, string $type): void
+    {
+        $cols = $pdo->query("PRAGMA table_info($table)")->fetchAll();
+        foreach ($cols as $c) {
+            if (($c['name'] ?? '') === $col) {
+                return; // 이미 존재
+            }
+        }
+        $pdo->exec("ALTER TABLE $table ADD COLUMN $col $type");
     }
 }

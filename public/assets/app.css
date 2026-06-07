@@ -201,3 +201,34 @@ details.sparql summary{cursor:pointer; color:var(--accent); font-size:.9rem}
 .danger{color:var(--red)}
 h2.ok,h2.danger{margin:0}
 pre.log{background:#1e2127; color:#d6dae0; padding:1rem; border-radius:9px; overflow:auto; font-size:.82rem; line-height:1.5; max-height:60vh; white-space:pre-wrap; word-break:break-word}
+
+/* ===== v0.3 — 다출처 식별자(국가서지LOD · ISNI · Wikidata) ===== */
+/* 외부 식별자 칩 */
+.idchips{display:flex; flex-wrap:wrap; gap:.35rem}
+.idchip{display:inline-block; font-size:.74rem; padding:.1rem .55rem; border-radius:99px; border:1px solid var(--line); background:#eef1f4; color:var(--ink-soft); font-variant-numeric:tabular-nums}
+.idchip:hover{text-decoration:none; border-color:var(--accent)}
+.idchip.wd{background:#e7f0fb; color:var(--poet); border-color:#cfe0f3}
+.idchip.nl{background:#e7f6ec; color:var(--green); border-color:#c9e9d4}
+.idchip.isni{background:#fff3da; color:var(--amber); border-color:#f0dcae}
+
+/* 폼 식별자 묶음(boxset 스타일 재사용) */
+fieldset.idset{border:1px solid var(--line); border-radius:8px; padding:.8rem; display:flex; flex-direction:column; gap:.7rem}
+
+/* 출처 배지 */
+.tag.nlsrc{background:#e7f6ec; color:var(--green); border-color:#c9e9d4}
+.tag.wdsrc{background:#e7f0fb; color:var(--poet); border-color:#cfe0f3}
+.src-note{margin:1rem 0}
+.detail .sub,.sub{color:var(--muted); font-size:.8rem; margin:.6rem 0 .35rem; font-weight:600}
+
+/* 국가서지LOD 이름 검색(자동완성) */
+.nl-search{border:1px dashed var(--line); border-radius:9px; padding:.8rem; margin-bottom:1rem; background:#f7f8fb}
+.nl-search-form{display:flex; gap:.5rem; flex-wrap:wrap}
+.nl-search-form input[name="nlq"]{flex:1 1 16rem; font:inherit; padding:.5rem .6rem; border:1px solid var(--line); border-radius:8px; background:#fff}
+.nl-cands{list-style:none; margin:.7rem 0 0; padding:0; display:flex; flex-direction:column; gap:.4rem; max-height:22rem; overflow:auto}
+.nl-cand{display:flex; align-items:center; justify-content:space-between; gap:.6rem; border:1px solid var(--line); border-radius:8px; padding:.45rem .6rem; background:#fff}
+.nl-cand.is-poet{border-color:#c9e9d4; background:#f4fbf6}
+.nl-cand-main{display:flex; align-items:center; gap:.4rem; flex-wrap:wrap}
+.nl-cand code{background:#eef1f4; border-radius:5px; padding:.05rem .35rem; font-size:.8rem}
+.fill-note{font-size:.85rem; padding:.5rem .7rem; border-radius:8px; margin:.2rem 0 .8rem}
+.fill-note.ok{background:#e7f6ec; border:1px solid #c9e9d4}
+.fill-note.danger{background:#fde9e7; border:1px solid #f5cfca; color:var(--red)}
