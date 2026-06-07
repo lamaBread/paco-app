@@ -3,6 +3,9 @@
 /data/*.sqlite-wal
 /data/*.sqlite-shm
 
+# 마이그레이션/자가업데이트 백업 (data/backups/ — Database·Updater 가 생성)
+/data/backups/
+
 # 정적 빌드 산출물 (bin/build.php 로 재생성)
 /dist/
 

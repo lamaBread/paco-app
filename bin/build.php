@@ -17,6 +17,7 @@ $GLOBALS['PACO_STATIC'] = true;
 $cfg = require __DIR__ . '/../config.php';
 require __DIR__ . '/../src/helpers.php';
 require __DIR__ . '/../src/Database.php';
+require __DIR__ . '/../src/Settings.php';
 require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
@@ -26,6 +27,7 @@ require __DIR__ . '/../src/pages_article.php';
 require __DIR__ . '/../src/pages_lod.php';
 
 $pdo  = Database::connect($cfg['db_path']);
+$cfg  = Settings::apply($pdo, $cfg);   // 사용자 설정(iri_data 등)을 정적 빌드에도 반영
 $repo = new Repo($pdo);
 $dist = $cfg['dist_dir'];
 

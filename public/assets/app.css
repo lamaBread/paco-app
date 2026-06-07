@@ -195,3 +195,9 @@ details.sparql summary{cursor:pointer; color:var(--accent); font-size:.9rem}
   .qedit{grid-template-columns:1fr}
   .qpreview{position:static}
 }
+
+/* 설정·업데이트(admin) 페이지 */
+.ok{color:var(--green)}
+.danger{color:var(--red)}
+h2.ok,h2.danger{margin:0}
+pre.log{background:#1e2127; color:#d6dae0; padding:1rem; border-radius:9px; overflow:auto; font-size:.82rem; line-height:1.5; max-height:60vh; white-space:pre-wrap; word-break:break-word}

@@ -22,6 +22,36 @@ php -S localhost:8002 -t dist      # 빌드 결과 미리보기
 # 배포: dist/ 전체를 웹서버 루트(또는 하위 경로)에 업로드
 ```
 
+> **실행 모델**: PACO 는 공개 repo(`github.com/lamaBread/paco-app`)를 `git clone` 한 뒤
+> `php -S localhost:8001 -t public` 로 구동하는 **로컬 우선 PHP 앱**이다. 데스크톱(Electron)
+> 배포는 **v2.0.0 로드맵**으로 보류되어 있다(맨 아래 참고).
+
+---
+
+## 설정 · 업데이트 · 마이그레이션
+
+- **설정(`?r=settings`)** — `iri_data`(LOD 발행 도메인) 같은 사용자 값은 `config.php`(출하 기본값)가
+  아니라 **DB(`app_setting`)** 에 저장된다. 그래서 코드를 업데이트해도(=파일을 덮어써도) 설정은
+  `data/` 안에 있어 보존된다. 설정 페이지에서 바꾸고, 비워서 저장하면 기본값으로 되돌아간다.
+
+- **원클릭 업데이트(`?r=update`)** — GitHub 공개 repo 의 **버전 태그**를 읽어 최신 버전을 임시 폴더에
+  클론한 뒤 코드 파일을 덮어쓴다. `data/`(편집 원본 DB)·`.git` 은 건드리지 않으며, 적용 전 코드·DB
+  를 `data/backups/` 에 백업하고, 새 코드로 마이그레이션을 별도 프로세스로 돌린 뒤, **실패하면
+  백업에서 자동 롤백**한다. CLI 로도 가능:
+
+  ```bash
+  php bin/self-update.php --check    # 최신 버전만 확인
+  php bin/self-update.php            # 최신 버전으로 업데이트
+  php bin/self-update.php 0.2.1      # 특정 버전으로
+  ```
+
+  > 개발 중(커밋 안 된 변경이 있는 작업트리)이거나 `PACO_DEV=1` 이면 자가 업데이트는 거부된다
+  > (개발자 작업트리 보호). 일반 실행에서만 동작한다.
+
+- **마이그레이션** — 스키마는 `PRAGMA user_version` 으로 단계가 관리된다(`src/Database.php`). 새
+  버전이 스키마/온톨로지를 바꾸면 DB 를 열 때 부족한 단계만 자동 적용되고, 데이터 변형 전 백업이
+  생성된다. 수동 실행: `php bin/migrate.php`.
+
 ---
 
 ## 세 가지 얼굴
@@ -36,22 +66,27 @@ php -S localhost:8002 -t dist      # 빌드 결과 미리보기
 
 ```
 paco/
-├─ config.php          # 경로·IRI(base)·접두사·Wikidata 설정
+├─ config.php          # 출하 기본값(경로·IRI base·접두사·Wikidata·repo). 사용자값은 DB(설정 페이지)
+├─ VERSION             # 0.2.0  ← 푸터 표시·자가 업데이트 비교 기준
 ├─ public/
 │  ├─ index.php        # 프론트 컨트롤러(라우터 + 액션)
 │  └─ assets/          # app.css · app.js(q-연결, 드래그 태깅)
 ├─ src/
-│  ├─ Database.php     # SQLite 스키마(온톨로지의 관계형 사상)
+│  ├─ Database.php     # SQLite 스키마 + PRAGMA user_version 마이그레이션 프레임워크
+│  ├─ Settings.php     # DB(app_setting) 사용자 설정 + config 오버레이
+│  ├─ Updater.php      # git 태그 기반 자가 업데이트(클론+덮어쓰기·백업·롤백)
 │  ├─ Repo.php         # 엔티티 CRUD
 │  ├─ Rdf.php          # 트리플 그래프 → NT / Turtle / RDF·XML / JSON-LD
 │  ├─ Wikidata.php     # owl:sameAs 사실·유사 시인 프리페치 캐시
 │  ├─ render.php       # 레이아웃 + URL 헬퍼(동적/정적 공용)
-│  └─ pages_*.php      # 페이지 컨트롤러
+│  └─ pages_*.php      # 페이지 컨트롤러 (… + pages_admin: 설정·업데이트)
 ├─ bin/
 │  ├─ init-db.php      # 스키마 + v0.4 샘플 시드
+│  ├─ migrate.php      # 마이그레이션 실행기(DB 열어 부족한 스키마 단계 적용)
+│  ├─ self-update.php  # 자가 업데이트 CLI (--check / 버전)
 │  └─ build.php        # 정적 아카이브 생성
 ├─ vocab/              # pac-ontology.owl · pac-shapes.ttl (v0.4, 어휘 원천)
-├─ data/paco.sqlite    # 편집 원본(생성됨)
+├─ data/paco.sqlite    # 편집 원본(생성됨) · data/backups/(마이그레이션·업데이트 백업)
 └─ dist/               # 정적 빌드 산출물(생성됨)
 ```
 
@@ -99,6 +134,15 @@ pyshacl -s vocab/pac-shapes.ttl -e vocab/pac-ontology.owl -i rdfs -df turtle dis
 - **친화도**: 내가 비평한 시인들끼리 공유하는 속성으로 묶이는 군집(데이터가 쌓일수록 또렷해짐).
 
 > 추천의 정밀도는 대상 시인의 LOD 풍부도에 비례한다. 사조·장르가 채워진 시인이 많을수록 군집이 선명해진다.
+
+## 로드맵
+
+- **v2.0.0 — Electron 데스크톱 배포** *(보류 중, 장기)*. 현재는 PHP 기반 실행·배포·업데이트로 일원화되어
+  있으나, 시스템은 *Electron 으로 패키징 가능한 상태*로 유지된다(`config.php` 의 `PACO_DB_PATH`/
+  `PACO_DIST_DIR` 오버라이드 — 번들 내부가 읽기전용일 때 쓰기 가능한 userData 로 DB 를 돌리기 위함).
+  Electron 도입은 설계 사상 레벨의 변경이므로 MAJOR(첫 자리) 버전업으로 다룬다.
+- 버전 규칙(SemVer): **PATCH**(셋째) 버그 수정 · **MINOR**(둘째) 기능 추가/변경 · **MAJOR**(첫째)
+  설계 사상 레벨의 대규모 변경. 자세한 절차는 `../paco-harness/HARNESS.md`.
 
 ---
 

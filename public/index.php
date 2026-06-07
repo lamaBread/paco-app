@@ -14,17 +14,21 @@ ini_set('display_errors', '1');
 $cfg = require __DIR__ . '/../config.php';
 require __DIR__ . '/../src/helpers.php';
 require __DIR__ . '/../src/Database.php';
+require __DIR__ . '/../src/Settings.php';
 require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
+require __DIR__ . '/../src/Updater.php';
 require __DIR__ . '/../src/render.php';
 require __DIR__ . '/../src/pages_common.php';
 require __DIR__ . '/../src/pages_article.php';
 require __DIR__ . '/../src/pages_lod.php';
+require __DIR__ . '/../src/pages_admin.php';
 
 session_start();
 
-$pdo  = Database::connect($cfg['db_path']);
+$pdo  = Database::connect($cfg['db_path']);   // 스키마 마이그레이션 자동 적용
+$cfg  = Settings::apply($pdo, $cfg);          // DB(app_setting) 사용자 설정을 cfg 에 덧씌움
 $repo = new Repo($pdo);
 
 $route = $_GET['r'] ?? 'dashboard';
@@ -135,6 +139,37 @@ try {
             if (!empty($sum['errors'])) $msg .= ' (오류: ' . implode(' / ', array_slice($sum['errors'], 0, 3)) . ')';
             redirect('insights', [], $msg);
 
+        case 'settings/save':
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+                redirect('settings');   // GET 으로 빈 값이 들어와 설정이 초기화되는 것을 방지
+            }
+            foreach (array_keys(Settings::EDITABLE) as $k) {
+                Settings::set($pdo, $k, $_POST[$k] ?? '');
+            }
+            redirect('settings', [], '설정을 저장했습니다.');
+
+        case 'update/apply':
+            // 파괴적·장시간 작업이므로 POST 로만 허용(우발적/교차사이트 GET 트리거 방지).
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+                redirect('update');
+            }
+            // 라이브 DB 연결을 닫아(WAL 체크포인트) 자가 업데이트의 백업/롤백 파일조작 정합성 보장.
+            $repo = null;
+            $pdo  = null;
+            Database::close();
+            // 자가 업데이트 적용(수십 초 소요 가능). 결과는 세션에 담아 update 페이지에서 표시.
+            $u = new Updater($cfg);
+            $tag = post('tag');
+            if ($tag === '') {
+                $chk = $u->check();
+                $tag = $chk['latestTag'] ?? '';
+            }
+            $res = $u->apply($tag);
+            $_SESSION['paco_update_result'] = $res;
+            redirect('update', [], $res['ok']
+                ? '업데이트 완료 — 페이지를 새로고침하면 새 버전으로 동작합니다.'
+                : '업데이트 실패: ' . ($res['error'] ?? '알 수 없는 오류'));
+
         case 'lod/dump':
             $fmt = $req['fmt'] ?? 'ttl';
             $g = Rdf::buildAbox($repo, $cfg);
@@ -175,6 +210,8 @@ unset($_SESSION['flash']);
     'quotations/edit' => page_quotation_edit($repo, $cfg, $req),
     'insights'        => page_insights($repo, $cfg),
     'lod'             => page_lod($repo, $cfg),
+    'settings'        => page_settings($repo, $cfg, $req),
+    'update'          => page_update($repo, $cfg, $req),
     default           => ['404', '<p class="muted">페이지를 찾을 수 없습니다: ' . h($route) . '</p>'],
 };
 

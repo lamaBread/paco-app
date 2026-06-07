@@ -7,11 +7,24 @@
  * 이 데이터로부터 온톨로지(vocab/pac-ontology.owl)에 충실하게 생성된다.
  */
 
+// 이 파일은 **출하 기본값**이다. 자가 업데이트(bin/self-update.php · 업데이트 탭)가
+// 코드와 함께 통째로 덮어쓴다. 사용자가 바꾸는 값(iri_data 등)은 DB(app_setting)에
+// 저장되어 보존되며 설정 페이지(?r=settings)에서 편집한다 — src/Settings.php 참고.
 return [
+    // ---- 버전 / 저장소(자가 업데이트) ----
+    'version'   => trim((string) @file_get_contents(__DIR__ . '/VERSION')) ?: 'dev',
+    // 원클릭 업데이트가 버전 태그를 읽고 클론하는 공개 repo.
+    // PACO_REPO_URL 로 덮어쓸 수 있다(포크/미러 또는 로컬 테스트용).
+    'repo'      => [
+        'url' => getenv('PACO_REPO_URL') ?: 'https://github.com/lamaBread/paco-app.git',
+        'web' => 'https://github.com/lamaBread/paco-app',
+    ],
+
     // ---- 경로 (절대경로로 고정해 CWD 의존을 없앤다) ----
-    // Electron 패키징: 앱 번들 내부(Resources)는 읽기 전용이므로, 쓰기가 일어나는
-    // SQLite DB 경로만 PACO_DB_PATH 환경변수로 외부(userData)로 돌릴 수 있게 한다.
-    // 환경변수가 없으면 기존과 동일하게 동작(개발/CLI 호환).
+    // 실행 모델은 `php -S localhost:8001 -t public`. 쓰기가 일어나는 SQLite DB 는
+    // data/ 에 있어 코드 업데이트(파일 덮어쓰기)에서 보존된다.
+    // PACO_DB_PATH/PACO_DIST_DIR 환경변수로 외부 경로로 돌릴 수 있다(먼 미래의
+    // Electron 배포(v2.0.0) 대비 — 번들 내부가 읽기전용일 때 userData 로 돌리기 위함).
     'base_dir'  => __DIR__,
     'db_path'   => getenv('PACO_DB_PATH') ?: __DIR__ . '/data/paco.sqlite',
     'vocab_dir' => __DIR__ . '/vocab',
@@ -20,7 +33,7 @@ return [
     // ---- LOD IRI 전략: 통합 덤프 + 설정형 base IRI ----
     // TBox(온톨로지 용어). v0.4 명세와 동일.
     'iri_tbox'  => 'http://example.org/pac#',
-    // ABox(인스턴스). 배포 도메인으로 교체하면 발행되는 LOD가 그 도메인으로 나간다.
+    // ABox(인스턴스) 기본값. 운영 도메인은 설정 페이지(app_setting.iri_data)에서 바꾼다.
     //   예: 'https://my-archive.example/paco/data/'
     'iri_data'  => 'http://example.org/pac/data/',
 
