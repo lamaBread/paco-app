@@ -49,6 +49,20 @@ function post(string $k, string $def = ''): string
     return isset($_POST[$k]) ? trim((string) $_POST[$k]) : $def;
 }
 
+/** 비동기(fetch) 요청인가 — 인용 편집기의 페이지 이탈 없는 저장에 쓴다(v0.4.2). */
+function is_ajax(): bool
+{
+    return ($_SERVER['HTTP_X_PACO_AJAX'] ?? '') !== '';
+}
+
+/** JSON 응답 후 종료. */
+function json_out(array $data): never
+{
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // --------------------------------------------------------- 액션(변경) 라우트
 try {
     switch ($route) {
@@ -126,11 +140,16 @@ try {
                     'target_order' => '',
                 ];
             }
-            $repo->saveQuotation([
+            $qid = $repo->saveQuotation([
                 'id' => post('id'), 'article_id' => $aid,
                 'qtype' => post('qtype', 'indirect'), 'anchor' => $anchor,
                 'targets' => $targets,
             ]);
+            // 비동기 저장(편집기 내 연속 기입): 페이지 이탈 없이 저장 결과만 JSON 으로.
+            if (is_ajax()) {
+                $saved = $repo->quotation($qid);
+                json_out(['ok' => true, 'quotation' => $saved ? quotation_client($saved) : null]);
+            }
             redirect('articles/edit', ['id' => $aid], '인용을 저장했습니다.');
 
         case 'quotations/delete':
@@ -220,6 +239,7 @@ try {
     }
 } catch (\Throwable $e) {
     http_response_code(500);
+    if (is_ajax()) json_out(['ok' => false, 'error' => $e->getMessage()]);
     $_SESSION['flash'] = '오류: ' . $e->getMessage();
     // 안전한 곳으로
     header('Location: index.php?r=dashboard');

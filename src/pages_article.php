@@ -297,6 +297,34 @@ HTML;
 }
 
 // ========================================================= 인용 편집기
+/**
+ * 인용 1건을 클라이언트 편집 모델(JSON)로. 편집기 초기 데이터·AJAX 저장 응답이 공유한다.
+ * 좌표는 정수/널, source 는 "kind:id" 합성값(편집 폼의 <select> 값과 동일).
+ */
+function quotation_client(array $q): array
+{
+    $targets = [];
+    foreach ($q['targets'] ?? [] as $t) {
+        $targets[] = [
+            'source'    => ($t['source_kind'] ?? '') !== '' ? $t['source_kind'] . ':' . $t['source_id'] : '',
+            'kind'      => $t['source_kind'] ?? '',
+            'source_id' => $t['source_id'] ?? '',
+            'ss'        => $t['start_stanza'] !== null && $t['start_stanza'] !== '' ? (int) $t['start_stanza'] : null,
+            'es'        => $t['end_stanza']   !== null && $t['end_stanza']   !== '' ? (int) $t['end_stanza']   : null,
+            'sl'        => $t['start_line']   !== null && $t['start_line']   !== '' ? (int) $t['start_line']   : null,
+            'el'        => $t['end_line']     !== null && $t['end_line']     !== '' ? (int) $t['end_line']     : null,
+            'exact'     => (string) ($t['exact'] ?? ''),
+            'loc'       => loc_label($t),
+        ];
+    }
+    return [
+        'id'      => $q['id'] ?? '',
+        'anchor'  => (string) ($q['anchor'] ?? ''),
+        'qtype'   => ($q['qtype'] ?? 'indirect') === 'direct' ? 'direct' : 'indirect',
+        'targets' => $targets,
+    ];
+}
+
 function page_quotation_edit(Repo $repo, array $cfg, array $req): array
 {
     $articleId = $req['article_id'] ?? '';
@@ -306,6 +334,7 @@ function page_quotation_edit(Repo $repo, array $cfg, array $req): array
 
     $saveUrl = h(url('quotations/save'));
     $backUrl = h(url('articles/edit', ['id' => $articleId]));
+    $viewUrl = h(url('articles/view', ['id' => $articleId]));
     $id = h($cur['id'] ?? '');
     $anchor = h($cur['anchor'] ?? '');
     $qtype = $cur['qtype'] ?? 'indirect';
@@ -326,53 +355,91 @@ function page_quotation_edit(Repo $repo, array $cfg, array $req): array
 
     $heading = $cur ? '인용 수정' : '새 인용';
     $articleTitle = h($article['title']);
-    // 본문 미리보기(앵커 확인용) + 본문에 존재하는 xml:id 자동완성
+
+    // ----- 좌측: 인용 대상이 될 시 본문(연·행 좌표를 보며 입력) -----
+    // page_article_view 와 같은 규칙으로 비평 대상 시(+ 시집 수록시 + 기존 인용 대상시)를 모은다.
+    $allQuots = $repo->quotations($articleId);
+    $cr = $repo->critiquesLabel($article);
+    $poemIds = [];
+    if ($cr['kind'] === 'poem' && $cr['id']) $poemIds[] = $cr['id'];
+    if ($cr['kind'] === 'book' && $cr['id']) {
+        foreach ($repo->poems() as $pm) if ($pm['book_id'] === $cr['id']) $poemIds[] = $pm['id'];
+    }
+    foreach ($allQuots as $q) foreach ($q['targets'] as $t) {
+        if (($t['source_kind'] ?? '') === 'poem' && !in_array($t['source_id'], $poemIds, true)) $poemIds[] = $t['source_id'];
+    }
+    $poemBlocks = '';
+    foreach ($poemIds as $pid) {
+        $pm = $repo->poem($pid);
+        if (!$pm) continue;
+        $poemBlocks .= '<div class="poemblock" data-poem="' . h($pid) . '"><h3>' . h($pm['title']) . '</h3>'
+            . render_poem_stanzas($repo->poemStanzas($pid)) . '</div>';
+    }
+    if ($poemBlocks === '') $poemBlocks = '<p class="muted">표시할 시 본문이 없습니다. 비평 대상을 시로 지정하고 본문을 입력하면 여기에 연·행이 나타납니다.</p>';
+
+    // ----- 우측: 비평문 미리보기(앵커 확인용) + 본문에 존재하는 xml:id 자동완성 -----
     $preview = enhance_fulltext($article['full_text']);
     preg_match_all('/xml:id\s*=\s*["\']?(\d+)/', $article['full_text'], $mm);
     $anchorOpts = '';
     foreach (array_values(array_unique($mm[1] ?? [])) as $av) $anchorOpts .= '<option value="' . h($av) . '">';
     $anchorDatalist = '<datalist id="anchor-list">' . $anchorOpts . '</datalist>';
-    // 대상으로 고를 수 있는 모든 시의 연/행 텍스트 — 범위→원문(oa:exact) 자동추출용(v0.4.1).
-    // poem_line 은 LOD 비발행(온톨로지 비훼손)이며, 여기선 편집 편의를 위해 읽기만 한다.
-    // 형태: { poemId: { stanza_no: { line_no: text } } } (연/행 1-기준, pac:TextSelection 좌표계와 일치).
+
+    // 모든 시의 연/행 텍스트(범위→원문 자동추출) + 이 비평문의 기존 인용 전부(클라이언트 편집 모델).
+    // poem_line 은 LOD 비발행(온톨로지 비훼손) — 여기선 읽기 전용 편의일 뿐, 새 라우트 없음.
     $poemsData = [];
     foreach ($repo->poems() as $pm) $poemsData[$pm['id']] = $repo->poemStanzas($pm['id']);
-    $fulltextJson = json_for_script(['fulltext' => $article['full_text'], 'poems' => $poemsData]);
+    $editJson = json_for_script([
+        'saveUrl'  => url('quotations/save'),
+        'poems'    => $poemsData,
+        'existing' => array_map(fn($q) => quotation_client($q), $allQuots),
+    ]);
 
     $body = <<<HTML
-<nav class="crumbs"><a href="{$backUrl}">← {$articleTitle}</a></nav>
+<nav class="crumbs"><a href="{$backUrl}">← {$articleTitle}</a> · <a href="{$viewUrl}">분할 뷰로 보기</a></nav>
 <section class="panel">
   <div class="panel-head"><h2>{$heading} <span class="muted">— {$articleTitle}</span></h2></div>
-  <div class="qedit">
+  <div class="qedit qedit3">
+    <aside class="qsource">
+      <div class="pane-label">인용 대상 — 시 본문 <small>(연·행 좌표를 보고 가운데에 입력)</small></div>
+      {$poemBlocks}
+    </aside>
     <form method="post" action="{$saveUrl}" class="form" id="quotation-form">
-      <input type="hidden" name="id" value="{$id}">
+      <div class="pane-label">인용 기입 <span class="muted" id="qedit-state"></span></div>
+      <input type="hidden" name="id" id="q-id" value="{$id}">
       <input type="hidden" name="article_id" value="{$articleId}">
       <div class="row">
         <label>본문 앵커 (xml:id) <span class="req">*</span>
-          <input name="anchor" required value="{$anchor}" placeholder="예: 1" list="anchor-list">
-          <small>비평문 본문 <code>&lt;q xml:id="N"&gt;</code> 의 N 과 일치시키세요.</small>
+          <input name="anchor" required value="{$anchor}" placeholder="예: 1" list="anchor-list" autocomplete="off">
+          <small>오른쪽 비평문에서 <code>&lt;q&gt;</code> 표지를 클릭하면 자동으로 채워집니다.</small>
         </label>
         <fieldset class="qtype"><legend>인용 유형 (pac:quotationType)</legend>
           <label class="chk"><input type="radio" name="qtype" value="indirect"{$tyIndirect}> 간접</label>
           <label class="chk"><input type="radio" name="qtype" value="direct"{$tyDirect}> 직접</label>
         </fieldset>
       </div>
-      <p class="note">본문 표지(oa:hasBody)는 위 <b>앵커(xml:id)</b> 하나로 지정됩니다 — 표지 문구는 본문 <code>&lt;q xml:id&gt;</code> 에 이미 있습니다(v0.4 슬림 모델).</p>
       <fieldset class="boxset"><legend>인용 대상 (oa:hasTarget) — 2개 이상이면 비연속 인용</legend>
         <div id="targets">{$targetRows}</div>
         <button type="button" class="btn" id="add-target">+ 대상 추가</button>
       </fieldset>
-      <div class="form-actions"><button class="btn primary">저장</button><a class="btn" href="{$backUrl}">취소</a></div>
+      <div class="form-actions">
+        <button class="btn primary" id="q-save">저장</button>
+        <button type="button" class="btn" id="q-new">새 인용 비우기</button>
+        <a class="btn" href="{$backUrl}">닫기</a>
+      </div>
+      <div class="saved-list-box">
+        <div class="pane-label">이 비평문의 인용 <span class="muted">— 클릭하면 불러와 수정</span></div>
+        <ul class="saved-list" id="saved-list"></ul>
+      </div>
     </form>
     <aside class="qpreview">
-      <div class="pane-label">본문 미리보기 — 앵커 확인용</div>
+      <div class="pane-label">비평문 — <code>&lt;q&gt;</code> 표지를 클릭해 앵커 선택</div>
       <div class="fulltext">{$preview}</div>
     </aside>
   </div>
 </section>
 {$anchorDatalist}
 <template id="target-template">{$templateRow}</template>
-<script type="application/json" id="paco-article">{$fulltextJson}</script>
+<script type="application/json" id="paco-qedit">{$editJson}</script>
 HTML;
     return [$heading, $body];
 }
