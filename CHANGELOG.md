@@ -11,6 +11,43 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (작업 중)
 
+## [0.4.1] — 2026-06-08
+> v0.4.0 인용 편집기에서 본문 표지(`<q>`)가 칠해지기만 하고 클릭에 반응하지 않던 문제를 해소하고,
+> 연/행 범위로 시 원문을 자동으로 찾아 띄운다. 스키마·온톨로지(TBox) 무변경 — 기존 컬럼
+> (`quotation_target.exact`·`start_line`·`end_line`)만 활용.
+
+### Added
+- **인용 편집기 미리보기의 `<q>` 표지 클릭 → 앵커 자동 지정.** 우측 본문 미리보기에서 인용 표지
+  (`<q xml:id="N">`)를 누르면 그 `N` 이 *본문 앵커(xml:id)* 입력칸에 채워지고 해당 표지가 강조된다.
+  앵커를 직접 입력·자동완성해도 대응하는 표지가 실시간으로 강조된다(양방향). 그동안 분할뷰에서만
+  살아 있던 표지 상호작용을 편집기에서도 쓸 수 있게 했다. (`public/assets/app.js` `initQuotationEditor`)
+- **연/행 범위 → 시 원문 자동 추출·표시.** 대상(`oa:hasTarget`) 행에 시작/끝 연·행을 입력하면 그 시
+  (`poem_line`)에서 해당 범위의 행 텍스트를 찾아 **라이브 미리보기**로 띄우고, *원문(`oa:exact`)* 칸이
+  비어 있을 때 자동으로 채운다(사용자 수동 수정은 보존). 범위 해석은 분할뷰 연결선과 동일하다(단일 연
+  +행 지정 → 그 행들, 그 외 → 연 전체). 시 연/행 텍스트는 편집기 페이지에 JSON 으로 인라인 공급한다
+  (`<script id="paco-article">` 의 `poems`) — 시 본문은 여전히 LOD 비발행(읽기 전용 편의이며 새 라우트
+  없음). 시집(`book`)을 출처로 고르면 행 좌표가 없어 자동추출을 건너뛴다. (`src/pages_article.php` ·
+  `public/assets/app.js` `initTargetExact`)
+
+### Changed
+- 인용 대상의 *원문(`oa:exact`)* 입력을 한 줄 `<input>` → 여러 줄 `<textarea>` 로 바꿔, 여러 행 인용 시
+  시행(詩行) 줄바꿈을 그대로 보존한다. (`src/pages_article.php` `target_row_html` · `public/assets/app.css`)
+
+### Fixed
+- **분할뷰의 표지↔연/행 하이라이트·연결선이 그려지지 않던 버그.** 인용 데이터(`#paco-quotations`)를
+  `<script type="application/json">` 에 `htmlspecialchars(ENT_QUOTES)` 로 넣었는데, `<script>` 는
+  raw-text 라 브라우저가 `&quot;` 를 디코드하지 않아 `JSON.parse` 가 즉시 throw → 그 뒤의 분할뷰
+  인터랙션 JS 가 통째로 죽고 있었다(실제 Chrome 에서 재현·확인). `json_for_script()`
+  (`JSON_HEX_TAG|JSON_HEX_AMP` 로 `</script>` 만 차단, `htmlspecialchars` 제거)로 바꿔 유효 JSON 이
+  그대로 파싱되게 했다. 같은 패턴이던 인용 편집기 데이터(`#paco-article`)도 함께 정상화 →
+  위 Feature A/B 가 동작하는 전제가 된다. (`src/helpers.php` `json_for_script` · `src/pages_article.php`)
+
+### 데이터 마이그레이션
+- **없음.** `SCHEMA_VERSION` 무변경(=4). `quotation_target` 의 `start_line`·`end_line`·`exact` 가 이미
+  존재해 추가할 컬럼·단계가 없다. 기존 인용의 `exact`(예: 공백으로 이어진 시드 값)는 그대로 보존되며,
+  자동채움은 빈 칸에만 적용된다. 검증: 시드 DB 의 q1~q4(1~4연·5연1행·2연·1연) 범위가 본문에서 정확히
+  추출됨을 확인. 전 라우트 HTTP 200(릴리스 게이트 `paco test-migration`)도 그대로 통과한다.
+
 ## [0.4.0] — 2026-06-08
 > v0.3.0 사용 중 기록된 문제 3건을 해결한다. TBox(온톨로지 용어) 무변경 — 모두 기존 어휘로 표현.
 

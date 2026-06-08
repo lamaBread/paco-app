@@ -164,6 +164,10 @@ ul.list li{margin:.2rem 0}
 .trow1 .grow{flex:1}
 .trow2{display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin:.5rem 0}
 .rm-target{align-self:center; border:1px solid var(--line); background:#fff; border-radius:6px; padding:.3rem .5rem; cursor:pointer}
+.target-row textarea.exact{width:100%; font:inherit; line-height:1.6; resize:vertical; min-height:2.6em}
+.exact-preview{margin:.35rem 0 0; padding:.4rem .6rem; background:var(--amber-soft); border-left:3px solid var(--amber);
+  border-radius:5px; font-size:.85rem; color:var(--ink); white-space:pre-wrap; line-height:1.6}
+.exact-preview:empty{display:none}
 
 /* ---- lod / insights ---- */
 .dl-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.7rem; margin-bottom:1rem}

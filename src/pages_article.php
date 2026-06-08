@@ -178,7 +178,7 @@ function page_article_view(Repo $repo, array $cfg, array $req): array
         $jsdata[] = ['id' => $q['id'], 'anchor' => $q['anchor'], 'type' => $q['qtype'], 'targets' => $jtargets];
     }
     if ($cards === '') $cards = '<p class="muted">인용이 없습니다.</p>';
-    $json = htmlspecialchars(json_encode($jsdata, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+    $json = json_for_script($jsdata);
 
     $meta = [];
     if ($a['author_name'] ?? null) $meta[] = h($a['author_name']);
@@ -332,7 +332,12 @@ function page_quotation_edit(Repo $repo, array $cfg, array $req): array
     $anchorOpts = '';
     foreach (array_values(array_unique($mm[1] ?? [])) as $av) $anchorOpts .= '<option value="' . h($av) . '">';
     $anchorDatalist = '<datalist id="anchor-list">' . $anchorOpts . '</datalist>';
-    $fulltextJson = htmlspecialchars(json_encode(['fulltext' => $article['full_text']], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+    // 대상으로 고를 수 있는 모든 시의 연/행 텍스트 — 범위→원문(oa:exact) 자동추출용(v0.4.1).
+    // poem_line 은 LOD 비발행(온톨로지 비훼손)이며, 여기선 편집 편의를 위해 읽기만 한다.
+    // 형태: { poemId: { stanza_no: { line_no: text } } } (연/행 1-기준, pac:TextSelection 좌표계와 일치).
+    $poemsData = [];
+    foreach ($repo->poems() as $pm) $poemsData[$pm['id']] = $repo->poemStanzas($pm['id']);
+    $fulltextJson = json_for_script(['fulltext' => $article['full_text'], 'poems' => $poemsData]);
 
     $body = <<<HTML
 <nav class="crumbs"><a href="{$backUrl}">← {$articleTitle}</a></nav>
@@ -405,7 +410,10 @@ function target_row_html(string|int $i, string $sourceOpts, array $t): string
     <label>시작 행<input type="number" min="1" name="t[{$i}][start_line]" value="{$sl}"></label>
     <label>끝 행<input type="number" min="1" name="t[{$i}][end_line]" value="{$el}"></label>
   </div>
-  <label>원문 (oa:exact)<input name="t[{$i}][exact]" value="{$ex}" placeholder="인용된 시 원문(선택)"></label>
+  <label>원문 (oa:exact) <small class="muted">— 위 연/행을 채우면 시 본문에서 자동으로 가져옵니다(비어 있을 때만). 직접 수정 가능.</small>
+    <textarea name="t[{$i}][exact]" rows="2" class="exact" placeholder="인용된 시 원문(선택) — 연/행을 입력하면 자동 채움">{$ex}</textarea>
+  </label>
+  <div class="exact-preview" aria-live="polite"></div>
 </div>
 HTML;
 }

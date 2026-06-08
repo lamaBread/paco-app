@@ -128,6 +128,106 @@
     });
   }
 
+  /* ====== 인용 편집기 A: 본문 미리보기 <q> 클릭 → 앵커 채움 + 양방향 강조 ====== */
+  var qform = document.getElementById('quotation-form');
+  if (qform) initQuotationEditor(qform);
+
+  function initQuotationEditor(form) {
+    var anchorInput = form.querySelector('input[name="anchor"]');
+    if (!anchorInput) return;
+    var marks = document.querySelectorAll('.qpreview .fulltext .qmark');
+
+    function highlight(val) {
+      marks.forEach(function (el) {
+        el.classList.toggle('active', val !== '' && el.getAttribute('data-anchor') === val);
+      });
+    }
+    marks.forEach(function (el) {
+      el.addEventListener('click', function () {
+        var a = el.getAttribute('data-anchor') || '';
+        anchorInput.value = a;
+        highlight(a);
+        anchorInput.focus();
+      });
+    });
+    // 타이핑/자동완성으로 앵커를 직접 입력해도 해당 <q> 가 강조되도록(양방향).
+    anchorInput.addEventListener('input', function () { highlight(anchorInput.value.trim()); });
+    highlight(anchorInput.value.trim());
+  }
+
+  /* ====== 인용 편집기 B: 대상행 연/행 범위 → 시 원문 자동 표시·채움 ====== */
+  var artEl = document.getElementById('paco-article');
+  var targetsEl = document.getElementById('targets');
+  if (artEl && targetsEl) initTargetExact(JSON.parse(artEl.textContent || '{}'), targetsEl);
+
+  function initTargetExact(data, targets) {
+    var poems = data.poems || {};
+
+    // 범위 → 시 행 텍스트 배열. 분할뷰 linesFor() 와 같은 규칙:
+    //  단일 연(끝연 없음/=시작연) + 행 지정 → 시작연 sl..el행 / 그 외 → 시작연..끝연 전체.
+    // null 반환 = 범위 미입력(표시 안 함), [] = 범위는 있으나 본문에서 못 찾음.
+    function rangeLines(poem, ss, es, sl, el) {
+      if (!poem || !ss) return null;
+      var out = [];
+      var single = (!es || es === ss);
+      if (sl && single) {
+        var st = poem[ss]; if (!st) return [];
+        var end = el || sl;
+        for (var ln = sl; ln <= end; ln++) if (st[ln] != null) out.push(st[ln]);
+      } else {
+        var e = es || ss;
+        for (var s = ss; s <= e; s++) {
+          var stz = poem[s]; if (!stz) continue;
+          Object.keys(stz).map(Number).sort(function (a, b) { return a - b; })
+            .forEach(function (k) { out.push(stz[k]); });
+        }
+      }
+      return out;
+    }
+
+    function num(row, field) {
+      var inp = row.querySelector('[name$="[' + field + ']"]');
+      var v = (inp && inp.value !== '') ? parseInt(inp.value, 10) : null;
+      return (v && v > 0) ? v : null;
+    }
+
+    function update(row) {
+      var sourceSel = row.querySelector('select[name$="[source]"]');
+      var exactEl = row.querySelector('[name$="[exact]"]');
+      var prev = row.querySelector('.exact-preview');
+      if (!sourceSel || !exactEl) return;
+      var src = sourceSel.value || '';
+      var kind = src.split(':')[0], pid = src.slice(kind.length + 1);
+
+      if (kind === 'book') {
+        if (prev) prev.textContent = '시집은 행 좌표가 없어 원문 자동추출을 지원하지 않습니다(행을 인용하려면 해당 시를 출처로 고르세요).';
+        return;
+      }
+      var lines = poems[pid] ? rangeLines(poems[pid], num(row, 'start_stanza'),
+        num(row, 'end_stanza'), num(row, 'start_line'), num(row, 'end_line')) : null;
+
+      if (lines == null) { if (prev) prev.textContent = ''; return; }
+      if (!lines.length) { if (prev) prev.textContent = '(해당 범위를 찾을 수 없습니다)'; return; }
+
+      var text = lines.join('\n');
+      if (prev) prev.textContent = text;
+      // 자동채움: 비어 있거나, 직전 자동값 그대로일 때만(사용자 수동 수정은 보존).
+      if (exactEl.value === '' || exactEl.value === exactEl.getAttribute('data-auto')) {
+        exactEl.value = text;
+        exactEl.setAttribute('data-auto', text);
+      }
+    }
+
+    // 이벤트 위임 — '+ 대상 추가'로 동적 생성된 행도 자동 적용된다.
+    targets.addEventListener('input', function (e) {
+      var row = e.target.closest('.target-row'); if (row) update(row);
+    });
+    targets.addEventListener('change', function (e) {
+      var row = e.target.closest('.target-row'); if (row) update(row);
+    });
+    targets.querySelectorAll('.target-row').forEach(update);  // 초기 미리보기 1회
+  }
+
   /* ============ 인용 편집기: 대상 행 추가/삭제 ============ */
   var addBtn = document.getElementById('add-target');
   if (addBtn) {
