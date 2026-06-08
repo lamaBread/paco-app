@@ -277,6 +277,122 @@ final class NlLod
         return $v ?: null;
     }
 
+    // ===================================================== 시집(국가서지LOD Book)
+    /** 국가서지LOD 시집 자원 URI → id(KMO…·CNTS-…·WMO… 등, 하이픈 포함). */
+    public static function bookResourceId(?string $uri): ?string
+    {
+        if (!$uri) return null;
+        $uri = trim($uri);
+        if (preg_match('#/resource/([A-Za-z0-9\-]+)#', $uri, $m)) return $m[1];
+        if (preg_match('/^[A-Za-z]{2,5}[0-9][A-Za-z0-9\-]*$/', $uri)) return $uri; // 맨 id 입력
+        return null;
+    }
+
+    /**
+     * 제목으로 국가서지LOD 시집(nlon:Book) 후보를 찾는다(시집 폼 자동완성용).
+     * 엔진 특성상 제목은 정확 일치(저자 이름 검색과 동일 전략)로 질의한다.
+     * @return array<int,array{id:string,uri:string,title:string,publisher:?string,year:?string}>
+     */
+    public function searchBooks(string $title): array
+    {
+        $title = trim($title);
+        if ($title === '') return [];
+        $lit = self::sparqlStr($title);
+        // 변수 주어 + OPTIONAL(저자 이름 검색과 같은 형태 — 바운드 주어가 아니라 엔진 버그를 피한다).
+        $q = <<<SPARQL
+        PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX nlon:    <http://lod.nl.go.kr/ontology/>
+        PREFIX dcterms: <http://purl.org/dc/terms/>
+        PREFIX dc:      <http://purl.org/dc/elements/1.1/>
+        SELECT ?s ?pub ?year WHERE {
+          ?s rdf:type nlon:Book ; dcterms:title "$lit" .
+          OPTIONAL { ?s dc:publisher ?pub . }
+          OPTIONAL { ?s nlon:issuedYear ?year . }
+        } LIMIT 60
+        SPARQL;
+        $cands = [];
+        foreach ($this->sparql($q) as $r) {
+            $uri = $r['s']['value'] ?? '';
+            $id  = self::bookResourceId($uri);
+            if (!$id) continue;
+            if (!isset($cands[$id])) {
+                $cands[$id] = ['id' => $id, 'uri' => $uri, 'title' => $title, 'publisher' => null, 'year' => null];
+            }
+            if (($r['pub']['value']  ?? '') !== '' && !$cands[$id]['publisher']) $cands[$id]['publisher'] = self::cleanTerm($r['pub']['value']);
+            if (($r['year']['value'] ?? '') !== '' && !$cands[$id]['year'])      $cands[$id]['year']      = rtrim($r['year']['value'], '~');
+        }
+        $out = array_values($cands);
+        usort($out, fn($a, $b) => strcmp((string) $b['year'], (string) $a['year']) ?: strcmp($a['id'], $b['id']));
+        return $out;
+    }
+
+    /**
+     * 시집 자원의 전체 RDF(/data/<id>?output=rdfxml)를 받아 핵심 서지를 파싱한다(시집 폼 채우기용).
+     * @return array{title:?string,isbn13:?string,publisher:?string,year:?string,
+     *               creator_uri:?string,creator_name:?string}|null  실패 시 null
+     */
+    public function fetchBookProfile(string $uri): ?array
+    {
+        $id = self::bookResourceId($uri);
+        if (!$id) return null;
+        $url = rtrim($this->cfg['nllod']['data_base'], '/') . '/' . rawurlencode($id) . '?output=rdfxml';
+        try {
+            $body = $this->httpGet($url, 'application/rdf+xml');
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (!$body || stripos($body, '<rdf:RDF') === false) return null;
+        $dom = new \DOMDocument();
+        if (!@$dom->loadXML($body)) return null;
+
+        $prof = ['title' => null, 'isbn13' => null, 'publisher' => null, 'year' => null,
+                 'creator_uri' => null, 'creator_name' => null];
+        $isbns = [];
+        $issued = null;
+        $target = 'http://lod.nl.go.kr/resource/' . $id;
+        foreach ($dom->documentElement->childNodes as $node) {
+            if (!($node instanceof \DOMElement)) continue;
+            if ($node->getAttributeNS(self::RDF_NS, 'about') !== $target) continue;
+            foreach ($node->childNodes as $p) {
+                if (!($p instanceof \DOMElement)) continue;
+                $res = $p->getAttributeNS(self::RDF_NS, 'resource');
+                $val = trim($p->textContent);
+                switch ($p->localName) {
+                    case 'title':       if ($val !== '' && $prof['title'] === null) $prof['title'] = $val; break;
+                    case 'isbn':        if ($val !== '') $isbns[] = $val; break;
+                    case 'publisher':   if ($val !== '' && $prof['publisher'] === null) $prof['publisher'] = self::cleanTerm($val); break;
+                    case 'issuedYear':  if ($val !== '' && $prof['year'] === null) $prof['year'] = rtrim($val, '~'); break;
+                    case 'issued':      if ($val !== '') $issued = rtrim($val, '~'); break;
+                    case 'creator':
+                        // dcterms:creator(자원=저자 전거 KAC…) vs dc:creator(리터럴 이름)
+                        if ($res !== '') { if (!$prof['creator_uri'])  $prof['creator_uri']  = $res; }
+                        elseif ($val !== '') { if (!$prof['creator_name']) $prof['creator_name'] = self::cleanTerm($val); }
+                        break;
+                }
+            }
+        }
+        $prof['isbn13'] = self::pickIsbn13($isbns);
+        if ($prof['year'] === null && $issued !== null) $prof['year'] = $issued;
+        return $prof;
+    }
+
+    /** bibo:isbn 여러 값(예: '9788937408090', '9788937408021 (세트)')에서 깨끗한 13자리를 고른다. */
+    private static function pickIsbn13(array $raws): ?string
+    {
+        $cands = [];
+        foreach ($raws as $r) {
+            $digits = preg_replace('/[^0-9Xx]/', '', (string) $r);
+            if (strlen($digits) === 13 && ctype_digit($digits)) $cands[] = $digits;
+        }
+        if (!$cands) return null;
+        // '(세트)' 같은 부가표기가 없던 값(원시 문자열이 숫자만)을 우선.
+        foreach ($raws as $r) {
+            $r = trim((string) $r);
+            if (preg_match('/^[0-9]{13}$/', $r)) return $r;
+        }
+        return $cands[0];
+    }
+
     // --------------------------------------------------------------- 내부 HTTP
     /** @return array<int,array> SPARQL JSON bindings (리터럴 값의 '~' 접미사 제거됨) */
     private function sparql(string $query): array

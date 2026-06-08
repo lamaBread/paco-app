@@ -328,6 +328,14 @@ HTML;
 }
 
 // ================================================================== 시집
+/** 시집의 국가서지LOD 자원 칩(있으면). */
+function book_nl_chip(array $b): string
+{
+    if (empty($b['nl_uri'])) return '<span class="muted">—</span>';
+    return '<a class="idchip nl" href="' . h($b['nl_uri']) . '" target="_blank" rel="noopener" title="국가서지LOD 시집">NL '
+        . h(NlLod::bookResourceId($b['nl_uri']) ?? '') . '</a>';
+}
+
 function page_books(Repo $repo, array $cfg, array $req): array
 {
     $edit = $req['edit'] ?? '';
@@ -339,26 +347,72 @@ function page_books(Repo $repo, array $cfg, array $req): array
             . '<a class="mini danger" href="' . h(url('books/delete', ['id' => $b['id']])) . '" data-confirm="삭제할까요?">삭제</a>';
         $rows .= '<tr><td><a href="' . h(url('books/view', ['id' => $b['id']])) . '">' . h($b['title']) . '</a></td>'
             . '<td>' . h($b['author_name'] ?? '—') . '</td><td>' . h($b['isbn13'] ?? '') . '</td>'
+            . '<td><div class="idchips">' . book_nl_chip($b) . '</div></td>'
             . '<td class="actions">' . $act . '</td></tr>';
     }
-    if ($rows === '') $rows = '<tr><td colspan="4" class="muted">등록된 시집이 없습니다.</td></tr>';
+    if ($rows === '') $rows = '<tr><td colspan="5" class="muted">등록된 시집이 없습니다.</td></tr>';
     $form = '';
     if (!is_static()) {
+        // ── 폼 프리필: 기존 시집(수정) → 국가서지LOD 자동완성(nl_fill) 순으로 덧씌움 ──
+        $prefill = [
+            'id' => $cur['id'] ?? '', 'title' => $cur['title'] ?? '',
+            'isbn13' => $cur['isbn13'] ?? '', 'author_id' => $cur['author_id'] ?? '',
+            'nl_uri' => $cur['nl_uri'] ?? '',
+        ];
+        $fillNote = '';
+        $nlFill = trim((string) ($req['nl_fill'] ?? ''));
+        if ($nlFill !== '') {
+            $nl = new NlLod($repo, $cfg);
+            $prof = $nl->fetchBookProfile('http://lod.nl.go.kr/resource/' . $nlFill);
+            if ($prof) {
+                $prefill['nl_uri'] = 'http://lod.nl.go.kr/resource/' . $nlFill;
+                if ($prefill['title'] === '' && $prof['title']) $prefill['title'] = $prof['title'];
+                if ($prof['isbn13']) $prefill['isbn13'] = $prof['isbn13'];
+                // 저자(KAC 전거)가 이미 인물에 nl_uri 로 연결돼 있으면 자동 선택.
+                $matched = '';
+                if ($prefill['author_id'] === '' && $prof['creator_uri']) {
+                    $poet = $repo->personByNlUri($prof['creator_uri']);
+                    if ($poet) { $prefill['author_id'] = $poet['id']; $matched = $poet['name']; }
+                }
+                $got = [];
+                if ($prof['isbn13']) $got[] = 'ISBN';
+                if ($prof['publisher']) $got[] = '발행처 ' . $prof['publisher'];
+                if ($prof['year']) $got[] = $prof['year'];
+                if ($matched !== '') $got[] = '저자 ' . $matched . ' 자동선택';
+                elseif ($prof['creator_name']) $got[] = '저자 ' . $prof['creator_name'] . '(미연결)';
+                $fillNote = '<p class="fill-note ok">국가서지LOD <b>' . h($nlFill) . '</b> 에서 가져옴: '
+                    . h(implode(', ', $got) ?: '기본 정보')
+                    . ' <span class="muted">— 확인 후 저장하세요.</span></p>';
+            } else {
+                $fillNote = '<p class="fill-note danger">국가서지LOD 조회에 실패했습니다(네트워크 또는 자원 없음). 값을 직접 입력하세요.</p>';
+            }
+        }
+
         $saveUrl = h(url('books/save'));
         $cancelUrl = h(url('books'));
-        $id = h($cur['id'] ?? '');
-        $title = h($cur['title'] ?? '');
-        $isbn = h($cur['isbn13'] ?? '');
-        $authOpts = person_options($repo, $cur['author_id'] ?? null, 'poet');
+        $id = h($prefill['id']);
+        $title = h($prefill['title']);
+        $isbn = h($prefill['isbn13']);
+        $nlUriV = h($prefill['nl_uri']);
+        $authOpts = person_options($repo, $prefill['author_id'] !== '' ? $prefill['author_id'] : null, 'poet');
         $heading = $cur ? '시집 수정' : '시집 추가';
+        $searchPanel = nl_book_search_panel($repo, $cfg, $req, (string) $edit);
         $form = <<<HTML
 <section class="panel">
   <div class="panel-head"><h2>{$heading}</h2></div>
+  {$searchPanel}
+  {$fillNote}
   <form method="post" action="{$saveUrl}" class="form">
     <input type="hidden" name="id" value="{$id}">
     <label>제목 <span class="req">*</span><input name="title" required value="{$title}" placeholder="예: 구관조 씻기기"></label>
     <label>저자(시인) <select name="author_id">{$authOpts}</select></label>
-    <label>ISBN-13 <input name="isbn13" value="{$isbn}" placeholder="13자리 숫자"></label>
+    <label>ISBN-13 <input name="isbn13" value="{$isbn}" placeholder="13자리 숫자 — 국가서지LOD 검색으로 자동 입력"></label>
+    <fieldset class="idset">
+      <legend>외부 LOD 식별자 <small>— owl:sameAs 로 발행됩니다</small></legend>
+      <label>국가서지LOD 시집 자원 URI <small>(국립중앙도서관 — 위 검색으로 자동 입력)</small>
+        <input name="nl_uri" value="{$nlUriV}" placeholder="http://lod.nl.go.kr/resource/KMO201302072">
+      </label>
+    </fieldset>
     <div class="form-actions"><button class="btn primary">저장</button><a class="btn" href="{$cancelUrl}">취소</a></div>
   </form>
 </section>
@@ -368,13 +422,59 @@ HTML;
 <section class="panel">
   <div class="panel-head"><h2>시집 (bibo:Book)</h2></div>
   <table class="grid">
-    <thead><tr><th>제목</th><th>저자</th><th>ISBN-13</th><th class="actions">　</th></tr></thead>
+    <thead><tr><th>제목</th><th>저자</th><th>ISBN-13</th><th>식별자</th><th class="actions">　</th></tr></thead>
     <tbody>{$rows}</tbody>
   </table>
 </section>
 {$form}
 HTML;
     return ['시집', $body];
+}
+
+/** 국가서지LOD 시집 제목 검색 박스 + (nlbq 가 있으면) 후보 목록. 선택 시 폼이 자동완성된다. */
+function nl_book_search_panel(Repo $repo, array $cfg, array $req, string $editId): string
+{
+    $nlq = trim((string) ($req['nlbq'] ?? ''));
+    $action = h(url('books'));
+    $editHidden = $editId !== '' ? '<input type="hidden" name="edit" value="' . h($editId) . '">' : '';
+    $qv = h($nlq);
+
+    $results = '';
+    if ($nlq !== '') {
+        $nl = new NlLod($repo, $cfg);
+        $cands = $nl->searchBooks($nlq);
+        if (!$cands) {
+            $results = '<p class="muted">‘' . h($nlq) . '’ 와 제목이 정확히 일치하는 국가서지LOD 시집이 없습니다(국립중앙도서관 목록상 제목으로 입력하세요).</p>';
+        } else {
+            $items = '';
+            foreach (array_slice($cands, 0, 30) as $c) {
+                $fillUrl = h(url('books', array_filter(['edit' => $editId, 'nl_fill' => $c['id']])));
+                $meta = [];
+                if ($c['publisher']) $meta[] = $c['publisher'];
+                if ($c['year']) $meta[] = $c['year'];
+                $metaHtml = $meta ? '<span class="tag">' . h(implode(' · ', $meta)) . '</span>' : '<span class="muted">발행정보 미상</span>';
+                $items .= '<li class="nl-cand">'
+                    . '<div class="nl-cand-main"><code>' . h($c['id']) . '</code> ' . $metaHtml . '</div>'
+                    . '<a class="btn mini primary" href="' . $fillUrl . '">이 시집으로 채우기</a></li>';
+            }
+            $n = count($cands);
+            $results = '<p class="muted">후보 ' . (int) $n . '건' . ($n > 30 ? ' (상위 30 표시)' : '')
+                . ' — 발행처·연도로 판(版)을 확인하고 선택하세요.</p>'
+                . '<ul class="nl-cands">' . $items . '</ul>';
+        }
+    }
+
+    return <<<HTML
+<div class="nl-search">
+  <form method="get" action="{$action}" class="nl-search-form">
+    <input type="hidden" name="r" value="books">
+    {$editHidden}
+    <input name="nlbq" value="{$qv}" placeholder="국가서지LOD에서 시집 찾기 — 제목 입력 (예: 구관조 씻기기)">
+    <button class="btn" type="submit">국가서지LOD 검색</button>
+  </form>
+  {$results}
+</div>
+HTML;
 }
 
 function page_book_view(Repo $repo, array $cfg, array $req): array
@@ -392,11 +492,13 @@ function page_book_view(Repo $repo, array $cfg, array $req): array
     $isbn = $b['isbn13'] ? h($b['isbn13']) : '<span class="muted">—</span>';
     $title = h($b['title']);
     $back = h(url('books'));
+    $nlChip = book_nl_chip($b);
     $body = <<<HTML
 <nav class="crumbs"><a href="{$back}">← 시집</a></nav>
 <article class="detail">
   <h1>{$title}</h1>
-  <table class="kv"><tr><th>저자</th><td>{$authHtml}</td></tr><tr><th>ISBN-13</th><td>{$isbn}</td></tr></table>
+  <table class="kv"><tr><th>저자</th><td>{$authHtml}</td></tr><tr><th>ISBN-13</th><td>{$isbn}</td></tr>
+    <tr><th>외부 식별자 <small>(owl:sameAs)</small></th><td><div class="idchips">{$nlChip}</div></td></tr></table>
   <h2>수록 시</h2><ul class="list">{$poems}</ul>
 </article>
 HTML;
@@ -427,7 +529,12 @@ function page_poems(Repo $repo, array $cfg, array $req): array
         $authOpts = person_options($repo, $cur['author_id'] ?? null, 'poet');
         $bookOpts = '<option value="">— 시집 없음 —</option>';
         foreach ($repo->books() as $b) $bookOpts .= opt($b['id'], $cur['book_id'] ?? null, $b['title']);
-        $bodyText = $cur ? h($repo->poemBodyText($cur['id'])) : '';
+        // 정식 소스는 시 마크업 XML(<poem><stanza><line>…). 기존 시는 body_xml 이 없으면 poem_line 에서 도출.
+        $bodyXml = $cur ? h($repo->poemBodyXml($cur['id'])) : '';
+        $placeholder = h(
+            "<poem>\n  <stanza n=\"1\">\n    <line>첫째 연 첫째 행</line>\n    <line>첫째 연 둘째 행</line>\n  </stanza>"
+            . "\n  <stanza n=\"2\">\n    <line>둘째 연 첫째 행</line>\n  </stanza>\n</poem>"
+        );
         $heading = $cur ? '시 수정' : '시 추가';
         $form = <<<HTML
 <section class="panel">
@@ -439,8 +546,8 @@ function page_poems(Repo $repo, array $cfg, array $req): array
       <label>저자(시인) <select name="author_id">{$authOpts}</select></label>
       <label>수록 시집 (dct:isPartOf) <select name="book_id">{$bookOpts}</select></label>
     </div>
-    <label>시 본문 <small>— 빈 줄로 연(聯) 구분, 줄바꿈으로 행 구분. 좌측 표시·연/행 선택에 쓰입니다(LOD 트리플로는 발행하지 않음).</small>
-      <textarea name="body_text" rows="12" class="mono" placeholder="첫째 연 첫째 행&#10;첫째 연 둘째 행&#10;&#10;둘째 연 첫째 행">{$bodyText}</textarea>
+    <label>시 본문 <small>— 시 마크업 XML(<code>&lt;poem&gt;&lt;stanza&gt;&lt;line&gt;…</code>)이 정식 소스입니다. 평문(빈 줄=연, 줄바꿈=행)으로 입력해도 저장 시 자동으로 XML 로 변환됩니다. 연/행 좌표는 인용(<code>pac:TextSelection</code>)과 좌측 표시에 쓰이며, 본문 자체는 LOD 로 발행하지 않습니다.</small>
+      <textarea name="body_text" rows="14" class="mono" placeholder="{$placeholder}">{$bodyXml}</textarea>
     </label>
     <div class="form-actions"><button class="btn primary">저장</button><a class="btn" href="{$cancelUrl}">취소</a></div>
   </form>

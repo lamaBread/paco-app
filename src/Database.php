@@ -36,7 +36,7 @@ use PDO;
 final class Database
 {
     /** 현재 코드가 기대하는 스키마 단계. 스키마를 바꾸면 +1 하고 migrations() 에 단계 추가. */
-    public const SCHEMA_VERSION = 3;
+    public const SCHEMA_VERSION = 4;
 
     private static ?PDO $pdo = null;
 
@@ -337,6 +337,19 @@ CREATE TABLE IF NOT EXISTS nl_fact (
 );
 CREATE INDEX IF NOT EXISTS ix_nlfact_person ON nl_fact(person_id);
 SQL);
+            },
+
+            // ── 4 (v0.4.0): ① 시집을 국가서지LOD 자원과 연결 ② 시 본문을 XML 정식 소스로. ──
+            //   book.nl_uri    : 시집의 국가서지LOD 자원 URI(owl:sameAs). 시인의 person.nl_uri 와 평행.
+            //                    발행 시 owl:sameAs <lod.nl.go.kr/resource/KMO…> 로 나가 시집이 국가서지에 연결된다.
+            //   poem.body_xml  : 시 본문의 정식 소스 = pac 시 마크업 XML(<poem><stanza><line>…).
+            //                    좌측 표시·연/행 선택을 구동하던 poem_line(연/행)은 이 XML 을 파싱해 만든다
+            //                    (XML 이 단일 진실, poem_line 은 파생). 본문은 여전히 LOD 비발행(온톨로지 비훼손) —
+            //                    XML 은 내부 저장용이며, 그 연/행 좌표가 pac:TextSelection 과 일치한다.
+            // 둘 다 '추가형'(컬럼 추가)이라 기존 행을 변형하지 않는다. body_xml 은 비면 poem_line 에서 즉석 도출한다.
+            4 => static function (PDO $pdo): void {
+                self::addColumn($pdo, 'book', 'nl_uri',   'TEXT'); // owl:sameAs (국가서지LOD 시집 자원)
+                self::addColumn($pdo, 'poem', 'body_xml', 'TEXT'); // 시 마크업 XML(정식 소스)
             },
         ];
     }

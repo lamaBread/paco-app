@@ -69,7 +69,8 @@ try {
 
         case 'books/save':
             $repo->saveBook(['id' => post('id'), 'title' => post('title'),
-                'author_id' => post('author_id'), 'isbn13' => post('isbn13')]);
+                'author_id' => post('author_id'), 'isbn13' => post('isbn13'),
+                'nl_uri' => post('nl_uri')]);   // 국가서지LOD 시집 자원(owl:sameAs)
             redirect('books', [], '시집을 저장했습니다.');
 
         case 'books/delete':
@@ -91,7 +92,8 @@ try {
         case 'articles/save':
             $d = ['id' => post('id'), 'title' => post('title'),
                   'author_id' => post('author_id'), 'created' => post('created'),
-                  'full_text' => $_POST['full_text'] ?? '',
+                  // 평문 본문(엔터 = 줄바꿈/문단)을 발행용 HTML(<p>/<br>)로 변환해 저장(v0.4.0).
+                  'full_text' => source_to_fulltext($_POST['full_text'] ?? ''),
                   'critiques_kind' => '', 'critiques_id' => ''];
             $crit = post('critiques');
             if ($crit !== '' && str_contains($crit, ':')) {
@@ -148,6 +150,28 @@ try {
             $errs = array_merge($nls['errors'] ?? [], $sum['errors'] ?? []);
             if ($errs) $msg .= ' (오류: ' . implode(' / ', array_slice($errs, 0, 3)) . ')';
             redirect('insights', [], $msg);
+
+        case 'me/save':
+            // 비평자(나) — LOD 연결 없이도 입력하는 pac:Critic. 안정 id(person_me) 로 upsert 후
+            // me_person_id 설정에 기록 → 새 비평문의 기본 비평자가 된다.
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+                redirect('settings');
+            }
+            $meName = post('name');
+            if ($meName === '') {
+                redirect('settings', [], '비평자(나)의 이름을 입력하세요.');
+            }
+            $meId = Settings::get($pdo, 'me_person_id') ?: 'person_me';
+            $meCur = $repo->person($meId);
+            $savedMe = $repo->savePerson([
+                'id' => $meId, 'name' => $meName,
+                'is_poet'   => $meCur ? !empty($meCur['is_poet']) : false, // 기존 역할 보존
+                'is_critic' => true,
+                'same_as' => post('same_as'), 'nl_uri' => post('nl_uri'),
+                'isni'    => post('isni'),    'note'   => post('note'),
+            ]);
+            Settings::set($pdo, 'me_person_id', $savedMe);
+            redirect('settings', [], '비평자(나) 정보를 저장했습니다.');
 
         case 'settings/save':
             if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {

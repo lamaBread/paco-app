@@ -45,6 +45,51 @@ function extract_q_text(string $html, string $anchor): string
     return '';
 }
 
+/**
+ * 본문 평문 소스 → 발행용 HTML(pac:fullText). (v0.4.0 — p태그를 직접 쓰지 않게)
+ * 규약(표준 산문): 빈 줄(엔터 2번) = 새 문단 <p>, 한 줄 엔터 = 문단 안 줄바꿈 <br>.
+ * 인라인 HTML(<q xml:id> 인용 표지 등)은 그대로 보존한다(이스케이프하지 않음 — 본문은 rdf:HTML).
+ */
+function source_to_fulltext(string $src): string
+{
+    $src = trim(str_replace(["\r\n", "\r"], "\n", $src));
+    if ($src === '') return '';
+    // 사용자는 '그냥 글'을 쓴다 → 인라인 인용 표지 <q …>/</q> 만 마크업으로 인정하고, 그 밖의 본문
+    // 텍스트의 < > & 는 이스케이프한다(본문 속 '2 < 3' 같은 글자가 HTML 을 깨지 않게). <q> 의
+    // xml:id 는 도구가 만든 값이라 안전하므로 그대로 둔다. 역변환(fulltext_to_source)이 엔티티를 환원한다.
+    $parts = preg_split('/(<\/?q\b[^>]*>)/i', $src, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $src = '';
+    foreach ($parts as $i => $seg) {
+        $src .= ($i % 2 === 1) ? $seg : htmlspecialchars($seg, ENT_NOQUOTES, 'UTF-8');
+    }
+    $paras = preg_split('/\n[ \t]*\n+/', $src);   // 빈 줄로 문단 분리(이스케이프는 줄바꿈을 건드리지 않음)
+    $out = [];
+    foreach ($paras as $p) {
+        $p = trim($p, "\n");
+        if (trim($p) === '') continue;
+        $lines = array_map('rtrim', explode("\n", $p));
+        $out[] = '<p>' . implode("<br>\n", $lines) . '</p>';
+    }
+    return implode("\n", $out);
+}
+
+/**
+ * 발행용 HTML → 편집용 평문 소스(역변환). 편집기에서 <p>·<br> 를 직접 보지 않게 한다.
+ * <q xml:id> 등 인라인 태그는 보존한다(p/br 만 평문 줄바꿈으로 환원). 평문 입력에는 영향 없음.
+ * source_to_fulltext 와 왕복(idempotent): source→HTML→source 가 원형을 유지한다.
+ */
+function fulltext_to_source(string $html): string
+{
+    $h = str_replace(["\r\n", "\r"], "\n", $html);
+    $h = preg_replace('#<br\s*/?>\n?#i', "\n", $h);              // <br>(+뒤따르는 줄바꿈 1개) → 줄바꿈
+    $h = preg_replace('#</p\s*>\s*<p\b[^>]*>#i', "\n\n", $h);     // 문단 경계 → 빈 줄
+    $h = preg_replace('#</?p\b[^>]*>#i', '', $h);                 // 남은 <p>/</p>(처음·끝·고아) 제거
+    $h = trim($h);
+    // 본문 텍스트의 엔티티를 평문으로 환원(source_to_fulltext 의 이스케이프 역연산).
+    // 인라인 <q> 표지는 엔티티가 없어 영향받지 않으므로 그대로 보존된다.
+    return html_entity_decode($h, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+}
+
 // ============================================================ 비평문 목록
 function page_articles(Repo $repo, array $cfg): array
 {
@@ -180,8 +225,11 @@ function page_article_edit(Repo $repo, array $cfg, array $req): array
     $id = h($cur['id'] ?? '');
     $title = h($cur['title'] ?? '');
     $created = h($cur['created'] ?? paco_today());
-    $fullText = h($cur['full_text'] ?? '<p></p>');
-    $criticOpts = person_options($repo, $cur['author_id'] ?? null, 'critic');
+    // 편집기에는 평문 소스로 보여준다(저장 시 <p>/<br> 로 변환). <p> 를 직접 입력하지 않게.
+    $fullText = h(fulltext_to_source($cur['full_text'] ?? ''));
+    // 새 비평문의 비평자 기본값 = 설정한 '나'(비평자). 수정 시엔 기존 저자.
+    $defaultAuthor = $cur['author_id'] ?? Settings::get($repo->pdo(), 'me_person_id');
+    $criticOpts = person_options($repo, $defaultAuthor, 'critic');
 
     // critiques 대상: poem/book 통합 select (값 "poem:ID" / "book:ID")
     $curTarget = '';
@@ -237,8 +285,8 @@ HTML;
       <button type="button" class="btn" id="btn-wrap-q">&lt;q&gt; 삽입 (선택 영역 태깅)</button>
       <span class="muted">선택한 텍스트를 <code>&lt;q xml:id="N"&gt;</code> 로 감쌉니다. N 은 자동 증가.</span>
     </div>
-    <label>본문 (pac:fullText · rdf:HTML)
-      <textarea name="full_text" id="full_text" rows="14" class="mono">{$fullText}</textarea>
+    <label>본문 <small>— <b>그냥 글로 쓰세요.</b> 엔터 2번(빈 줄)이면 새 문단, 엔터 1번이면 줄바꿈으로 저장됩니다(<code>&lt;p&gt;</code>·<code>&lt;br&gt;</code> 직접 입력 불필요). 인용 표지 <code>&lt;q xml:id&gt;</code> 는 그대로 보존됩니다.</small>
+      <textarea name="full_text" id="full_text" rows="14" class="mono" placeholder="비평문을 그냥 글로 쓰세요.&#10;엔터 1번은 줄바꿈, 엔터 2번(빈 줄)은 새 문단이 됩니다.&#10;&#10;인용할 곳은 텍스트를 선택하고 위의 ‘&lt;q&gt; 삽입’ 버튼을 누르세요.">{$fullText}</textarea>
     </label>
     <div class="form-actions"><button class="btn primary">저장</button><a class="btn" href="{$cancelUrl}">취소</a></div>
   </form>

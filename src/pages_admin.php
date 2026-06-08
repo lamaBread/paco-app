@@ -8,6 +8,7 @@ function page_settings(Repo $repo, array $cfg, array $req): array
 {
     $eff = Settings::effective($cfg);   // 현재 유효값(DB 설정이 덧씌워진 cfg 기준)
     $saveUrl = h(url('settings/save'));
+    $saveUrl_people = h(url('people'));
 
     $fields = '';
     foreach (Settings::EDITABLE as $key => $meta) {
@@ -32,7 +33,48 @@ HTML;
     $schema = h($uv) . ' / ' . Database::SCHEMA_VERSION;
     $dbPath = h((string) ($cfg['db_path'] ?? ''));
 
+    // ── 비평자(나) — LOD 등록 없이도 입력하는 '나'(pac:Critic). 새 비평문의 기본 저자. ──
+    $meId = Settings::get($repo->pdo(), 'me_person_id');
+    $me   = $meId ? $repo->person($meId) : null;
+    $meSave = h(url('me/save'));
+    $meName = h($me['name'] ?? '');
+    $meNote = h($me['note'] ?? '');
+    $meSame = h($me['same_as'] ?? '');
+    $meNl   = h($me['nl_uri'] ?? '');
+    $meIsni = h($me['isni'] ?? '');
+    $meChips = $me ? identifier_chips($me) : '';
+    $meStatus = $me
+        ? '<p class="fill-note ok">현재 ‘나’: <b>' . h($me['name']) . '</b> <span class="idchips">' . $meChips . '</span> — 새 비평문의 비평자로 자동 선택됩니다.</p>'
+        : '<p class="muted">아직 ‘나’가 설정되지 않았습니다. 이름만 입력해도 됩니다(LOD 연결은 선택).</p>';
+
     $body = <<<HTML
+<section class="panel">
+  <div class="panel-head"><h2>비평자 — 나</h2></div>
+  <p class="lead">시를 읽고 비평하는 <b>나(pac:Critic)</b>의 정보입니다. 모두가 국가서지LOD 에
+     등록되어 있지는 않으므로, <b>외부 LOD 연결 없이 이름만으로</b> 등록할 수 있습니다.
+     여기서 만든 ‘나’가 새 비평문의 기본 비평자가 됩니다.</p>
+  {$meStatus}
+  <form method="post" action="{$meSave}" class="form">
+    <label>이름 <span class="req">*</span><input name="name" required value="{$meName}" placeholder="예: 홍길동 (또는 필명)"></label>
+    <label>소개 / 약력 <small>(선택 — 내부 메모. LOD 로 발행되지 않습니다)</small>
+      <textarea name="note" rows="2">{$meNote}</textarea>
+    </label>
+    <fieldset class="idset">
+      <legend>외부 LOD 식별자 <small>— 모두 선택사항. 없어도 됩니다(owl:sameAs 로 발행)</small></legend>
+      <label>Wikidata IRI <small>(있으면)</small>
+        <input name="same_as" value="{$meSame}" placeholder="http://www.wikidata.org/entity/Q…">
+      </label>
+      <label>국가서지LOD 자원 URI <small>(있으면)</small>
+        <input name="nl_uri" value="{$meNl}" placeholder="http://lod.nl.go.kr/resource/KAC…">
+      </label>
+      <label>ISNI <small>(있으면 · 16자리)</small>
+        <input name="isni" value="{$meIsni}" placeholder="0000 0000 0000 0000">
+      </label>
+    </fieldset>
+    <div class="form-actions"><button class="btn primary" type="submit">‘나’ 저장</button>
+      <a class="btn" href="{$saveUrl_people}">인물 목록에서 보기</a></div>
+  </form>
+</section>
 <section class="panel">
   <div class="panel-head"><h2>설정</h2></div>
   <p class="lead">아래 값은 DB(<code>app_setting</code>)에 저장되어, 코드 업데이트(파일 덮어쓰기)와

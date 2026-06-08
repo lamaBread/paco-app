@@ -11,6 +11,44 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (작업 중)
 
+## [0.4.0] — 2026-06-08
+> v0.3.0 사용 중 기록된 문제 3건을 해결한다. TBox(온톨로지 용어) 무변경 — 모두 기존 어휘로 표현.
+
+### Added
+- **비평자(나) 설정 — LOD 등록 없이도 ‘나’를 입력.** 설정 페이지(`?r=settings`)에 *비평자 — 나*
+  패널을 추가. 시를 읽고 비평하는 개인은 국가서지LOD 에 없을 수 있으므로, **이름만으로**(외부 LOD
+  연결은 선택) `pac:Critic` 인 ‘나’를 만든다. 안정 id(`person_me`)로 upsert 하고 `me_person_id`
+  설정에 기록하여, **새 비평문의 비평자 기본값**이 된다. (`src/pages_admin.php`, 라우트 `me/save`)
+- **시집 ISBN ↔ 국가서지LOD 연동.** 시집 추가/수정에서 **제목으로 국가서지LOD 시집(`nlon:Book`)
+  검색 → 후보 선택**(발행처·연도로 판 구분)하면 **ISBN-13 이 자동 입력**되고, 그 시집의 국가서지LOD
+  자원 URI(`book.nl_uri`)가 연결된다. 저자 전거(`dcterms:creator` = KAC…)가 이미 인물에 `nl_uri`
+  로 연결돼 있으면 **저자도 자동 선택**된다. 시인 이름 검색과 같은 전략(변수 주어 SPARQL → 자원
+  RDF/XML 파싱, `~` 접미사 보정). (`src/NlLod.php` `searchBooks`/`fetchBookProfile`)
+- **시 마크업 XML — 시 본문의 정식 소스.** 연/행을 기술하는 최소 XML(`<poem><stanza><line>…`)을
+  도입(`vocab/poem-xml.md`). 시 편집기는 이 XML 을 정식 소스로 보여주고 저장하며(평문 입력도 받아
+  자동 변환), `poem_line`(좌측 표시·연/행 선택·LOD 선택자 좌표)은 이 XML 에서 파생된다. 본문은
+  여전히 LOD 비발행(온톨로지 비훼손) — XML 의 연/행 좌표가 `pac:TextSelection` 과 일치한다.
+
+### Changed
+- **비평문 본문에 `<p>`/`<br>` 를 직접 쓰지 않는다.** 본문은 평문으로 쓰고, **저장 시** 표준 산문
+  규칙으로 발행용 HTML(`pac:fullText` · `rdf:HTML`)을 만든다: **빈 줄(엔터 2번)=새 문단 `<p>`,
+  한 줄 엔터=문단 내 줄바꿈 `<br>`**. 인용 표지 `<q xml:id>` 는 보존된다. 편집기는 저장된 HTML 을
+  다시 평문으로 역변환해 보여줘(왕복 idempotent) `<p>` 를 직접 다루지 않게 한다.
+  (`src/pages_article.php` `source_to_fulltext`/`fulltext_to_source`)
+- 시집 목록/상세에 국가서지LOD 식별자 칩(NL)을 표시. LOD 발행 시 시집의 `owl:sameAs`(국가서지LOD
+  자원)도 함께 나간다(인물의 다출처 `owl:sameAs` 와 평행).
+
+### 데이터 마이그레이션
+- **user_version 3 → 4** (모두 *추가형* — 기존 행 무변형): ① `book` 에 `nl_uri` 컬럼 추가
+  (`ALTER TABLE ADD COLUMN`, 컬럼 존재 가드로 멱등) ② `poem` 에 `body_xml` 컬럼 추가. 변형 단계가
+  없어 행수는 그대로 보존되며, 변형 전 자동 백업(`data/backups/`) 정책도 동일.
+- 구버전 시(`body_xml` 없음)는 편집·표시 시 `poem_line` 에서 XML 을 즉석 도출하므로 그대로 동작한다
+  (저장하면 그때 `body_xml` 이 채워진다). 비평문 본문도 기존 HTML 그대로 읽히고, 편집 후 저장할 때
+  새 규칙으로 정규화된다.
+- 검증: v0.1.0·v0.2.0·v0.3.0 fixture 에서 `paco test-migration` 통과(행수 보존 · 전 라우트 HTTP
+  200 · 치명 오류 없음). 네트워크 질의(국가서지LOD/Wikidata)는 사용자가 *검색/프리페치* 를 누를
+  때만 일어나므로 일반 페이지 로드·호환성 테스트는 오프라인에서도 안전하다.
+
 ## [0.3.0] — 2026-06-08
 ### Added
 - **국가서지LOD(국립중앙도서관, lod.nl.go.kr) 연동 — 시인 식별·추론의 '기본' 출처.** 인물에

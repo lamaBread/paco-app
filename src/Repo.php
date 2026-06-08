@@ -31,6 +31,15 @@ final class Repo
         $st->execute([$id]);
         return $st->fetch() ?: null;
     }
+    /** 국가서지LOD 자원 URI(person.nl_uri)로 인물 1명 찾기 — 시집 저자 자동 매칭용. */
+    public function personByNlUri(string $uri): ?array
+    {
+        $uri = trim($uri);
+        if ($uri === '') return null;
+        $st = $this->db->prepare('SELECT * FROM person WHERE nl_uri=? LIMIT 1');
+        $st->execute([$uri]);
+        return $st->fetch() ?: null;
+    }
     public function savePerson(array $d): string
     {
         $id = $d['id'] ?: ('person_' . paco_slug($d['name']));
@@ -76,13 +85,14 @@ final class Repo
     {
         $id = $d['id'] ?: ('book_' . paco_slug($d['title']));
         $st = $this->db->prepare(
-            'INSERT INTO book (id,title,author_id,isbn13) VALUES (:id,:t,:a,:i)
-             ON CONFLICT(id) DO UPDATE SET title=:t, author_id=:a, isbn13=:i'
+            'INSERT INTO book (id,title,author_id,isbn13,nl_uri) VALUES (:id,:t,:a,:i,:nl)
+             ON CONFLICT(id) DO UPDATE SET title=:t, author_id=:a, isbn13=:i, nl_uri=:nl'
         );
         $st->execute([
             ':id' => $id, ':t' => $d['title'],
             ':a' => $d['author_id'] !== '' ? $d['author_id'] : null,
             ':i' => $d['isbn13'] !== '' ? $d['isbn13'] : null,
+            ':nl' => ($d['nl_uri'] ?? '') !== '' ? trim($d['nl_uri']) : null, // 국가서지LOD 시집 자원
         ]);
         return $id;
     }
@@ -124,7 +134,7 @@ final class Repo
         }
         return $out;
     }
-    public function savePoem(array $d, ?string $bodyText = null): string
+    public function savePoem(array $d, ?string $bodyInput = null): string
     {
         $id = $d['id'] ?: ('poem_' . paco_slug($d['title']));
         $st = $this->db->prepare(
@@ -136,44 +146,147 @@ final class Repo
             ':a' => $d['author_id'] !== '' ? $d['author_id'] : null,
             ':b' => $d['book_id'] !== '' ? $d['book_id'] : null,
         ]);
-        if ($bodyText !== null) {
-            $this->setPoemBody($id, $bodyText);
+        if ($bodyInput !== null) {
+            $this->setPoemBody($id, $bodyInput);
         }
         return $id;
     }
     /**
-     * 시 본문 텍스트를 연/행으로 분해해 저장.
-     * 규약: 빈 줄(\n\n)로 연 구분, 줄바꿈으로 행 구분.
+     * 시 본문 저장 — 정식 소스는 pac 시 마크업 XML(<poem><stanza><line>…). (v0.4.0)
+     * 입력은 XML 또는 평문(빈 줄=연, 줄바꿈=행) 모두 허용한다(하위 호환). 어느 쪽이든
+     *   ① 연/행 구조로 파싱 → ② poem.body_xml 에 표준 XML 로 보관(단일 진실)
+     *   ③ poem_line(좌측 표시·연/행 선택·LOD 선택자 좌표)을 그 구조에서 파생 저장.
+     * 본문 자체는 LOD 로 발행하지 않는다(온톨로지 비훼손) — 연/행 좌표만 pac:TextSelection 에 쓰인다.
      */
-    public function setPoemBody(string $poemId, string $text): void
+    public function setPoemBody(string $poemId, string $input): void
+    {
+        $stanzas = self::parsePoemInput($input);
+        $this->setPoemLines($poemId, $stanzas);
+        $this->db->prepare('UPDATE poem SET body_xml=? WHERE id=?')
+            ->execute([$stanzas ? self::buildPoemXml($stanzas) : null, $poemId]);
+    }
+    /** 연/행 구조([sNo=>[lNo=>text]])를 poem_line 으로 전량 교체 저장. */
+    private function setPoemLines(string $poemId, array $stanzas): void
     {
         $this->db->prepare('DELETE FROM poem_line WHERE poem_id=?')->execute([$poemId]);
-        $text = str_replace(["\r\n", "\r"], "\n", trim($text));
-        if ($text === '') return;
-        $stanzas = preg_split('/\n[ \t]*\n+/', $text);
+        if (!$stanzas) return;
         $ins = $this->db->prepare(
             'INSERT INTO poem_line (poem_id,stanza_no,line_no,text) VALUES (?,?,?,?)'
         );
+        $sNo = 0;
+        foreach ($stanzas as $lines) {
+            $sNo++;
+            $lNo = 0;
+            foreach ($lines as $text) {
+                $lNo++;
+                $ins->execute([$poemId, $sNo, $lNo, rtrim((string) $text)]);
+            }
+        }
+    }
+    /**
+     * 시 본문 정식 소스(XML)를 반환. body_xml 이 있으면 그대로, 없으면(구버전 시) poem_line 에서
+     * 즉석 도출한다 — 그래서 v0.3 이하에서 만든 시도 편집기에서 XML 로 보인다(마이그레이션은 추가형).
+     */
+    public function poemBodyXml(string $poemId): string
+    {
+        $st = $this->db->prepare('SELECT body_xml FROM poem WHERE id=?');
+        $st->execute([$poemId]);
+        $xml = $st->fetchColumn();
+        if (is_string($xml) && trim($xml) !== '') return $xml;
+        $stanzas = $this->poemStanzas($poemId);
+        return $stanzas ? self::buildPoemXml($stanzas) : '';
+    }
+    /** 평문 본문(빈 줄=연, 줄바꿈=행) — 구버전 호환·평문 보기용. */
+    public function poemBodyText(string $poemId): string
+    {
+        $parts = [];
+        foreach ($this->poemStanzas($poemId) as $lines) {
+            $parts[] = implode("\n", $lines);
+        }
+        return implode("\n\n", $parts);
+    }
+
+    // ---- 시 마크업 XML (정식 소스) ↔ 연/행 구조 ----------------------------------
+    /** 입력(XML 또는 평문)을 연/행 구조 [stanzaNo => [lineNo => text]] 로. */
+    public static function parsePoemInput(string $input): array
+    {
+        $input = str_replace(["\r\n", "\r"], "\n", trim($input));
+        if ($input === '') return [];
+        // <poem>/<stanza>/<line> 형태면 XML 로, 아니면 평문으로 파싱(파싱 실패 시 평문 폴백).
+        if (preg_match('/<\s*(poem|stanza|line)\b/i', $input)) {
+            $xmlStanzas = self::parsePoemXml($input);
+            if ($xmlStanzas !== null) return $xmlStanzas;
+        }
+        return self::parsePoemPlain($input);
+    }
+    /** pac 시 마크업 XML → 연/행 구조. 실패 시 null(=평문 폴백). */
+    private static function parsePoemXml(string $xml): ?array
+    {
+        // 손으로 입력한 XML 의 흔한 오류(이스케이프 안 한 맨 '&')를 관용적으로 보정한다.
+        // 이미 엔티티(&amp; &#123; 등)인 '&' 는 건드리지 않는다. 우리가 생성한 표준형은 항상 적격.
+        $xml = preg_replace('/&(?!#?[0-9A-Za-z]+;)/', '&amp;', $xml);
+        $prev = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument();
+        // 루트가 없을 수도 있으니 <poem> 으로 감싸 안전하게 로드(이미 <poem> 이면 중첩돼도 stanza 탐색엔 무해).
+        $ok = $dom->loadXML('<poem-wrap>' . $xml . '</poem-wrap>');
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+        if (!$ok) return null;
+        $stanzaEls = $dom->getElementsByTagName('stanza');
+        $out = [];
+        $sNo = 0;
+        if ($stanzaEls->length > 0) {
+            foreach ($stanzaEls as $st) {
+                $sNo++;
+                $lNo = 0;
+                foreach ($st->getElementsByTagName('line') as $ln) {
+                    $lNo++;
+                    $out[$sNo][$lNo] = trim($ln->textContent);
+                }
+                if ($lNo === 0) { $sNo--; } // 빈 연은 건너뜀
+            }
+        } else {
+            // <stanza> 없이 <line> 만 있으면 한 연으로 취급
+            $lineEls = $dom->getElementsByTagName('line');
+            if ($lineEls->length === 0) return null;
+            $sNo = 1; $lNo = 0;
+            foreach ($lineEls as $ln) { $out[1][++$lNo] = trim($ln->textContent); }
+        }
+        return $out;
+    }
+    /** 평문(빈 줄=연, 줄바꿈=행) → 연/행 구조. */
+    private static function parsePoemPlain(string $text): array
+    {
+        $stanzas = preg_split('/\n[ \t]*\n+/', $text);
+        $out = [];
         $sNo = 0;
         foreach ($stanzas as $stanza) {
             $lines = explode("\n", trim($stanza, "\n"));
             if (count($lines) === 1 && trim($lines[0]) === '') continue;
             $sNo++;
             $lNo = 0;
-            foreach ($lines as $line) {
-                $lNo++;
-                $ins->execute([$poemId, $sNo, $lNo, rtrim($line)]);
-            }
+            foreach ($lines as $line) { $out[$sNo][++$lNo] = rtrim($line); }
         }
+        return $out;
     }
-    public function poemBodyText(string $poemId): string
+    /** 연/행 구조 → pac 시 마크업 XML(표준형, n 속성은 문서순서로 생성). */
+    public static function buildPoemXml(array $stanzas): string
     {
-        $stanzas = $this->poemStanzas($poemId);
-        $parts = [];
+        $esc = fn(string $s): string => htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $sNo = 0;
+        $out = "<poem>\n";
         foreach ($stanzas as $lines) {
-            $parts[] = implode("\n", $lines);
+            $sNo++;
+            $out .= '  <stanza n="' . $sNo . "\">\n";
+            $lNo = 0;
+            foreach ($lines as $text) {
+                $lNo++;
+                $t = $esc(rtrim((string) $text));
+                $out .= '    <line n="' . $lNo . '">' . $t . "</line>\n";
+            }
+            $out .= "  </stanza>\n";
         }
-        return implode("\n\n", $parts);
+        return $out . '</poem>';
     }
     public function deletePoem(string $id): void
     {

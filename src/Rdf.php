@@ -89,6 +89,8 @@ final class Rdf
             $g->add($s, 'pac:documentTitle', self::lit($b['title']));
             if (!empty($b['author_id'])) $g->add($s, 'pac:hasAuthor', $D($b['author_id']));
             if (!empty($b['isbn13']))    $g->add($s, 'bibo:isbn13', self::lit($b['isbn13']));
+            // 국가서지LOD 시집 자원과 동일인(동일 시집) 링크 — 인물의 nl_uri 와 평행(owl:sameAs).
+            if (!empty($b['nl_uri']))    $g->add($s, 'owl:sameAs', self::iri(trim((string) $b['nl_uri'])));
         }
 
         // ---- 시 ----
