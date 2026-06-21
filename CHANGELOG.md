@@ -11,6 +11,34 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (없음)
 
+## [0.7.2] — 2026-06-22
+> **프리페치 중 개발서버가 세그폴트로 죽던 문제 수정.** 국가서지LOD 갱신을 별도
+> 백그라운드 프로세스로 분리해, 장시간 네트워크 작업이 `php -S` 서버를 더는 막지 않는다.
+
+### Fixed
+- **`insights/refresh` 프리페치 → `php -S` 세그폴트.** `refreshAll()`+`fetchCandidates()` 는
+  공개 LOD 엔드포인트에 수십 번 네트워크 호출을 하는 장시간 작업인데, 이를 빌트인 개발서버(단일
+  스레드·블로킹) 요청 안에서 동기로 돌렸다. 서버 스레드가 수 분간 묶이는 동안 브라우저가 그 요청을
+  중단/재시도하면, 끊긴 클라이언트 연결이 서버의 이벤트 루프(`php_cli_server_do_event_for_each_fd_callback`)를
+  망가뜨려 `SIGSEGV`(KERN_INVALID_ADDRESS)로 죽었다 — 네이티브 크래시라 `try/catch`·`ignore_user_abort`
+  로 막을 수 없다. **장시간 작업을 요청 밖으로 분리**해 해결: 인앱 버튼은 이제 별도 CLI 프로세스
+  (`bin/prefetch.php`)를 백그라운드(detached)로 띄우고 즉시 반환한다(`src/Prefetch.php`).
+
+### Added
+- **백그라운드 프리페치 + 진행 상태 표시.** 인사이트 페이지가 갱신 상태(진행 중/완료/실패)를
+  배너로 비추고, 진행 중에는 3초마다 폴링해 결과를 자동 표시한다. 상태는 `data/prefetch-status.json`
+  으로 주고받는다(스키마 변경 없음). 좀비 lock 은 프로세스 생존(pid) 확인으로 자동 해제한다.
+- **`bin/prefetch.php`** — 프리페치를 터미널에서 직접 실행하는 CLI(인앱 버튼과 동일 엔진).
+
+### Changed
+- **`PRAGMA busy_timeout = 5000`** 추가(`src/Database.php`) — 백그라운드 프리페치가 `nl_fact`/
+  `nl_candidate` 에 쓰는 동안 웹 요청이 같은 DB 를 만질 때 'database is locked' 를 피한다(WAL 모드
+  보강).
+
+### 데이터 마이그레이션
+- 없음(`SCHEMA_VERSION`=5 그대로). 코드·표시 로직 변경만. `data/prefetch-status.json`·
+  `data/prefetch.log` 는 런타임 산출물(`data/` 는 gitignore — 업데이트·백업에 영향 없음).
+
 ## [0.7.1] — 2026-06-22
 > v0.7.0 의 **추론 질의 M4(편식 지도) 치명 버그 수정.** 프리페치로 국가서지LOD 생몰년이
 > 채워지면 추론 질의 페이지 전체가 죽던 것을 고친다.

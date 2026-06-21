@@ -293,3 +293,9 @@ table.grid tr.thin td a{color:var(--accent); opacity:.85}
 .thin-legend{color:var(--muted)}
 /* C2 gap 배지 */
 .chip.rec .score{background:var(--amber); font-size:.68rem; min-width:auto; padding:0 .45em}
+/* 프리페치 진행 상태(v0.7.2 — 백그라운드 갱신) */
+.pf-status{font-size:.86rem; display:inline-flex; align-items:center; gap:.35rem}
+.pf-status.running{color:var(--accent)}
+.pf-status.done{color:#1d7a4d}
+.pf-status.error{color:#b3261e}
+.btn[aria-disabled="true"]{opacity:.6; cursor:default; pointer-events:none}

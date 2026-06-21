@@ -180,12 +180,34 @@ function page_insights(Repo $repo, array $cfg): array
     }
 
     // ── 툴바 ─────────────────────────────────────────────────
+    // 프리페치는 백그라운드 CLI 프로세스로 돈다(v0.7.2 — 동기 실행 시 dev 서버 세그폴트).
+    // 여기서는 그 진행 상태(running/done/error)를 비추고, 진행 중이면 페이지를 폴링해 결과를
+    // 자동으로 보여준다. [[Prefetch]]
+    $fmt = static fn(?string $iso): string => $iso ? date('Y-m-d H:i', strtotime($iso) ?: time()) : '';
     $refreshBtn = '';
+    $pollHtml   = '';
+    $lastHtml   = $nlLast
+        ? '<span class="muted">마지막 갱신: 국가서지LOD ' . h($nlLast) . '</span>'
+        : '<span class="muted">아직 갱신 안 됨</span>';
     if (!is_static()) {
         $refreshUrl = h(url('insights/refresh'));
-        $refreshBtn = '<a class="btn primary" href="' . $refreshUrl . '" data-confirm="국가서지LOD 공개 엔드포인트에 질의해 프로파일·후보 캐시를 갱신합니다. 계속할까요?">프리페치 / 갱신</a>';
+        $pf = Prefetch::status($cfg);
+        if (Prefetch::isRunning($cfg)) {
+            $refreshBtn = '<span class="btn" aria-disabled="true">갱신 중…</span>';
+            $lastHtml   = '<span class="pf-status running">⏳ 국가서지LOD 갱신 중… '
+                . '<span class="muted">시작 ' . h($fmt($pf['started_at'])) . '</span></span>';
+            // 작업 완료를 폴링 — 진행 중에만 3초마다 새로고침해 결과를 자동 표시한다.
+            $pollHtml = '<script>setTimeout(function(){location.reload();},3000);</script>';
+        } else {
+            $refreshBtn = '<a class="btn primary" href="' . $refreshUrl . '" data-confirm="국가서지LOD 공개 엔드포인트에 질의해 프로파일·후보 캐시를 백그라운드에서 갱신합니다. 계속할까요?">프리페치 / 갱신</a>';
+            if (($pf['state'] ?? '') === 'error' && $pf['error']) {
+                $lastHtml = '<span class="pf-status error">✗ 갱신 실패: ' . h((string) $pf['error']) . '</span>';
+            } elseif (($pf['state'] ?? '') === 'done' && $pf['summary']) {
+                $lastHtml = '<span class="pf-status done">✓ ' . h((string) $pf['summary'])
+                    . ' <span class="muted">(' . h($fmt($pf['finished_at'])) . ')</span></span>';
+            }
+        }
     }
-    $lastHtml = $nlLast ? '<span class="muted">마지막 갱신: 국가서지LOD ' . h($nlLast) . '</span>' : '<span class="muted">아직 갱신 안 됨</span>';
 
     // ── 형식 정의용 SPARQL(발행 그래프 기준) ───────────────────
     $qM1 = h(<<<'SPARQL'
@@ -243,7 +265,7 @@ SPARQL);
 <section class="hero small">
   <h1>추론 질의 <small>— 비평가의 거울과 나침반</small></h1>
   <p class="lead">외부 사실을 나열하는 대신, <b>당신의 비평 그래프</b>(비평문·인용·연/행)를 거울로 비추고 <b>국가서지LOD</b> 프로파일로 다음 행동을 가리킵니다. <b>거울</b>은 인용 습관·텍스트 밀착도·위치 편향·시대/분야 편식을 보여주고(네트워크 불필요), <b>나침반</b>은 아직 안 다룬 내 자료와, 내가 비운 세대를 채울 시인을 — 이미 비평한 시인은 빼고 — 사유와 함께 추천합니다.</p>
-  <div class="toolbar">{$refreshBtn} {$lastHtml}</div>
+  <div class="toolbar">{$refreshBtn} {$lastHtml}</div>{$pollHtml}
   {$summaryHtml}
 </section>
 

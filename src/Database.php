@@ -54,6 +54,10 @@ final class Database
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $pdo->exec('PRAGMA foreign_keys = ON');
         $pdo->exec('PRAGMA journal_mode = WAL');
+        // 백그라운드 프리페치 프로세스(bin/prefetch.php)가 nl_fact/nl_candidate 에 쓰는 동안
+        // 웹 요청이 같은 DB 를 읽고/쓸 수 있다. WAL 은 동시 읽기를 허용하지만, 쓰기 경합 시
+        // 잠깐 기다리도록 busy_timeout 을 두어 'database is locked' 를 피한다(v0.7.2).
+        $pdo->exec('PRAGMA busy_timeout = 5000');
         self::$pdo = $pdo;
         self::migrate($pdo, $path);
         return $pdo;

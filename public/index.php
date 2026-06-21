@@ -19,6 +19,7 @@ require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
 require __DIR__ . '/../src/NlLod.php';
+require __DIR__ . '/../src/Prefetch.php';
 require __DIR__ . '/../src/Insights.php';
 require __DIR__ . '/../src/Updater.php';
 require __DIR__ . '/../src/render.php';
@@ -158,17 +159,13 @@ try {
             redirect('articles/edit', ['id' => $req['article_id'] ?? ''], '인용을 삭제했습니다.');
 
         case 'insights/refresh':
-            // 국가서지LOD 프로파일 갱신(편식 지도 M4 의 입력) — 갱신하며 NL 의 owl:sameAs 로
-            // Wikidata 도 자동 연결한다. 이어서 C2(다음 시인) 후보 풀을 같은 분야로 프리페치.
-            $nl  = new NlLod($repo, $cfg);
-            $nls = $nl->refreshAll();
-            $cnd = $nl->fetchCandidates();
-            $msg = "국가서지LOD: 시인 {$nls['poets']}명 · 프로파일 사실 {$nls['facts']}건"
-                . ($nls['linked'] ? " · Wikidata 자동연결 {$nls['linked']}명" : '')
-                . " · 다음 시인 후보 {$cnd['candidates']}명({$cnd['fields']}개 분야).";
-            $errs = $nls['errors'] ?? [];
-            if ($errs) $msg .= ' (오류: ' . implode(' / ', array_slice($errs, 0, 3)) . ')';
-            redirect('insights', [], $msg);
+            // 국가서지LOD 프리페치(편식 지도 M4 · 다음 시인 C2 의 입력)는 외부 LOD 에 수십 번
+            // 네트워크 호출을 하는 장시간 작업이다. php -S(단일 스레드·블로킹) 요청 안에서 동기로
+            // 돌리면 서버 스레드가 묶이고, 그 사이 중단된 클라이언트 연결이 빌트인 서버의 이벤트
+            // 루프를 망가뜨려 세그폴트가 난다(v0.7.2). 그래서 별도 CLI 프로세스(bin/prefetch.php)로
+            // 분리해 백그라운드로 띄우고 즉시 반환한다. 진행 상태는 인사이트 페이지가 표시한다.
+            $r = Prefetch::spawn($cfg);
+            redirect('insights', [], $r['message']);
 
         case 'me/save':
             // 비평자(나) — LOD 연결 없이도 입력하는 pac:Critic. 안정 id(person_me) 로 upsert 후

@@ -6,6 +6,11 @@
 # 마이그레이션/자가업데이트 백업 (data/backups/ — Database·Updater 가 생성)
 /data/backups/
 
+# 백그라운드 프리페치 런타임 산출물 (src/Prefetch.php · bin/prefetch.php 가 생성)
+# — 자가 업데이트의 dirty 트리 거부를 막지 않도록 반드시 무시한다.
+/data/prefetch-status.json
+/data/prefetch.log
+
 # 정적 빌드 산출물 (bin/build.php 로 재생성)
 /dist/
 
