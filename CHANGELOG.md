@@ -11,6 +11,52 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (없음)
 
+## [0.6.0] — 2026-06-22
+> 발행 LOD 를 **'외부 추론용 학술 그래프'로 재정향**한다. 비평가의 비평 궤적·성장을 외부 LOD
+> (국가서지LOD·Wikidata)와 연계해 추론(예: "다음에 어떤 시인을 볼까")하는 데 필요한 원본 사실만
+> 발행하고, **GUI 직렬화에서 생긴 내부 앵커는 발행하지 않는다.** v0.5 #3 이 "내부 앵커(정규 발행
+> 사실 아님)"라 주석만 달고 발행은 했던 반걸음을 실제 비발행으로 완성. SQLite 스키마·RDB 무변경
+> (`SCHEMA_VERSION`=4) — 시 본문 LOD 비발행 불변식 유지(내부 앵커도 비발행으로 확장).
+
+### Changed
+- **발행 목적 재정향(문서·어휘).** `src/Rdf.php` 도크블록·`README`·`src/pages_lod.php`·`config.php`
+  의 "충실한 직렬화" 카피를 "외부 추론용 학술 그래프 / 원본 사실만 발행"으로 정정. 온톨로지/SHACL
+  `versionInfo` 0.5.0 → 0.6.0, `priorVersion` 0.4.0 → 0.5.0, `config.ont_version` 0.5.0 → 0.6.0.
+
+### Removed (발행 LOD 에서만 — RDB·GUI 는 무변경)
+- **비평문 속 인용 표지 body 비발행.** `pac:Quotation` 에서 `oa:hasBody`(→`oa:SpecificResource`
+  →`oa:FragmentSelector`→`rdf:value`=xml:id)를 더는 발행하지 않는다(인용당 7트리플 감소). 그
+  xml:id 는 GUI 분할뷰용 내부 앵커일 뿐 외부 추론엔 노이즈다. 인용은 `oa:hasTarget` 만 가진다
+  (W3C Web Annotation 상 target-only 어노테이션은 적법). 비평문↔인용 연결은 `pac:hasQuotation`
+  으로 유지. (`src/Rdf.php` `buildQuotation`)
+- **`pac:fullText`(비평문 전문 HTML) 비발행.** 외부 추론의 조인 키가 아니고, 그 안의 `<q xml:id>`
+  가 위 앵커를 다시 흘리는 통로이므로 함께 제외(비평문당 1트리플 감소). 전문은 시스템 내부(RDB
+  `article.full_text`·GUI)에만 남는다. (`src/Rdf.php` `buildAbox`)
+- **SHACL 동기화 완화.** `pac:BodyShape`·`pac:FragmentSelectorShape`·`QuotationShape` 의
+  `oa:hasBody` 제약·`ArticleShape` 의 `pac:fullText` 제약과 fullText↔앵커 SPARQL 검사 2건 제거
+  (발행 그래프에 더는 없는 노드를 검사하던 shape). **유지**: `hasQuotation`/`hasTarget` 최소개수,
+  `TargetShape`·`TextSelectionShape`·`TextQuoteSelectorShape`. (`vocab/pac-shapes.ttl`)
+
+### 유지 (비발행 아님 — 외부 추론의 신호)
+- 인용 대상 `oa:hasTarget`(`pac:TextSelection` 연/행 · `oa:exact` · `pac:targetOrder`)은 그대로
+  발행한다. "비평가가 어느 구절에 반응했나"는 `cito:critiques`(작품 레벨)로 환원 불가능한 원본
+  신호이며, `oa:exact` 의 시 원문 *단편*은 시 본문 비발행 불변식 대상이 아니다(의도적 lossy 발췌).
+
+### 데이터 마이그레이션
+- **없음.** `SCHEMA_VERSION` 무변경(=4). SQLite 스키마/행 무변형 — `src/Rdf.php`(발행 매핑)·
+  `vocab/pac-shapes.ttl`(검증)·`vocab`/문서/버전 문자열만 변경. `quotation.anchor`·
+  `article.full_text` 컬럼은 GUI 가 쓰므로 RDB 에 그대로 둔다(발행에서만 제외).
+- 검증: v0.1.0~v0.5.0 fixture `paco test-migration` 통과(행수 보존·전 라우트 HTTP 200). 발행물은
+  인용 body·fullText 트리플이 사라진다(의도된 변경; 샘플 ABox 114→85). pyshacl **Conforms: True**
+  (완화된 shapes·기본/rdfs 추론 모두).
+
+### 비고
+- **GUI 무영향.** 분할뷰·편집기·연결선은 RDB(`quotation.anchor` 등)에서 직접 렌더하므로 그대로
+  동작한다. 단 `?r=lod` 발행 페이지의 Turtle 미리보기·4형식 덤프는 의도대로 가벼워진다(버그 아님).
+- **추론 가동 전제(별건).** "다음에 어떤 시인" 추론(`?r=insights`)을 실제로 굴리려면 비평가가 비평한
+  *시인*의 `owl:sameAs`(국가서지LOD·Wikidata) 링크가 채워져 있어야 한다 — 이 변경과 무관한 데이터
+  충실화 과제다.
+
 ## [0.5.0] — 2026-06-21
 > 온톨로지(TBox)를 외부 어휘 비훼손 원칙에 맞게 정직화하고, 온톨로지가 "발행 매핑 산출물"임을
 > 어휘·문서로 명문화한다. SQLite 스키마·발행 데이터 무변경(`SCHEMA_VERSION`=4) — 시 본문 LOD
@@ -236,7 +282,8 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 - 최초 버전 — 마이그레이션 대상 없음. 이 버전의 시드 DB가 이후 버전 호환성
   테스트의 **기준 fixture**(`paco-harness/fixtures/0.1.0/`)가 된다.
 
-[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/lamaBread/paco-app/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/lamaBread/paco-app/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/lamaBread/paco-app/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/lamaBread/paco-app/compare/v0.4.0...v0.4.1

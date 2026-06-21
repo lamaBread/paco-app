@@ -6,8 +6,8 @@
  *   person            ← pac:Poet / pac:Critic (foaf:Person 하위, 둘은 배타 아님)
  *   book              ← bibo:Book
  *   poem / poem_line  ← pac:Poem (+ 연/행 본문은 표시·선택용 내부 데이터)
- *   article           ← bibo:Article (pac:fullText 포함)
- *   quotation         ← pac:Quotation (= oa:Annotation) 의 body 측
+ *   article           ← bibo:Article (full_text 는 GUI용 내부 본문; v0.6 LOD 비발행)
+ *   quotation         ← pac:Quotation (= oa:Annotation). anchor 는 GUI 앵커 — v0.6 발행은 target 측만
  *   quotation_target  ← oa:hasTarget(SpecificResource) 1..N (비연속 인용)
  *   app_setting       ← 사용자 런타임 설정(iri_data 등) k/v. config.php 와 분리되어
  *                       코드 업데이트(파일 덮어쓰기)와 무관하게 보존된다.
@@ -244,17 +244,17 @@ CREATE TABLE IF NOT EXISTS article (
     created        TEXT,                     -- dct:created (xsd:date 'YYYY-MM-DD')
     critiques_kind TEXT,                     -- 'poem' | 'book'  (cito:critiques 대상 종류)
     critiques_id   TEXT,                     -- poem.id | book.id
-    full_text      TEXT NOT NULL DEFAULT '', -- pac:fullText (rdf:HTML, <q xml:id="N"> 포함)
+    full_text      TEXT NOT NULL DEFAULT '', -- GUI 본문 HTML(<q xml:id="N"> 포함). v0.6: LOD 비발행(내부 전용)
     updated_at     TEXT
 );
 
--- 인용: pac:Quotation (= oa:Annotation). 여기 한 행이 하나의 oa:hasBody 를 포함.
--- body 는 FragmentSelector(anchor=xml:id) 하나로 충분 → body 텍스트 선택자 컬럼 없음.
+-- 인용: pac:Quotation (= oa:Annotation). anchor 는 비평문 본문의 <q xml:id> 표지를 가리키는
+-- GUI 분할뷰용 내부 앵커다. v0.6 부터 발행 LOD 에는 싣지 않고(노이즈), target 측만 발행한다.
 CREATE TABLE IF NOT EXISTS quotation (
     id           TEXT PRIMARY KEY,          -- pacd:{id}, 보통 q1, q2 …
-    article_id   TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE, -- pac:hasQuotation / body source
+    article_id   TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE, -- pac:hasQuotation
     qtype        TEXT NOT NULL DEFAULT 'indirect',  -- 'direct' | 'indirect' (pac:quotationType)
-    anchor       TEXT NOT NULL,             -- 본문 <q xml:id="N"> 의 N (FragmentSelector/rdf:value)
+    anchor       TEXT NOT NULL,             -- 본문 <q xml:id="N"> 의 N. GUI 앵커(v0.6 LOD 비발행)
     sort_order   INTEGER NOT NULL DEFAULT 0
 );
 

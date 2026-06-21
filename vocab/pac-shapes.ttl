@@ -1,10 +1,14 @@
-# PAC SHACL Shapes — v0.5.0
+# PAC SHACL Shapes — v0.6.0
 # =========================
+# v0.6: 발행 LOD 를 '외부 추론용 학술 그래프'로 재정향 — 비평문 속 인용 표지 body(GUI 앵커)와
+#       pac:fullText(전문)를 발행하지 않는다. 그에 맞춰 '발행 그래프에 더는 없는 노드'를
+#       검사하던 shape 를 제거: QuotationShape 의 oa:hasBody 제약 · pac:BodyShape ·
+#       pac:FragmentSelectorShape · ArticleShape 의 fullText 제약과 fullText↔앵커 SPARQL 검사 2건.
+#       target 쪽(TargetShape/TextSelectionShape/TextQuoteSelectorShape·hasQuotation·hasTarget)은 전부 유지.
 # v0.5: targetClass 무변경 — 인스턴스가 이중타입(bibo:Book + pac:PoetryCollection,
 #       bibo:Article + pac:CriticalEssay)이라 BookShape/ArticleShape 가 여전히 타깃된다.
 #       QuotationShape 의 sh:in(DirectQuotation/IndirectQuotation)도 IRI 동일이라 무변경.
-#       (TBox 의 owl:oneOf 정직화·라벨 중립화·하위클래스는 발행 그래프 형태를 바꾸지 않는다.)
-# v0.4: oa:prefix/oa:suffix 제약 제거(속성 폐지). body 는 FragmentSelector 만 요구(기존과 동일).
+# v0.4: oa:prefix/oa:suffix 제약 제거(속성 폐지).
 #
 # pac-ontology.owl(TBox) + pac-sample.owl(ABox) 의 데이터 무결성을 검증한다.
 # OWL 의 정의역/치역은 '추론'이라 위반을 잡지 못한다. 닫힌 세계의 '검증'은 SHACL 의 일이다.
@@ -84,42 +88,11 @@ pac:ArticleShape a sh:NodeShape ;
     sh:property [
         sh:path dct:created ; sh:maxCount 1 ; sh:datatype xsd:date ;
         sh:message "작성일은 xsd:date 한 개여야 한다." ] ;
-    sh:property [
-        sh:path pac:fullText ; sh:minCount 1 ; sh:maxCount 1 ;
-        sh:datatype rdf:HTML ;
-        sh:message "비평문 본문(pac:fullText)은 rdf:HTML 한 개여야 한다." ] ;
+    # v0.6: pac:fullText 비발행 — 본문 전문 제약과 fullText↔앵커 정합 SPARQL 검사 2건을 제거.
+    #   (비평문↔인용 연결은 아래 pac:hasQuotation 으로 유지된다.)
     sh:property [
         sh:path pac:hasQuotation ; sh:minCount 1 ; sh:class pac:Quotation ;
-        sh:message "비평문은 인용을 하나 이상 포함한다." ] ;
-    # --- 본문 <q xml:id> 와 인용 앵커의 정합성(SPARQL 제약) ---
-    # 참고(v0.5): pac:fullText 의 rdf:HTML 직렬화에 의존하는 검사다. <q xml:id> 는 내부 표시
-    #   앵커(정규 발행 사실 아님)이므로 이 정합은 편의 검사이지 발행 무결성의 필수 조건은 아니다.
-    # 주의: rdf:HTML 리터럴은 처리계(html5)에 따라 직렬화가 달라진다.
-    #   원본 xml:id="1"  →  rdflib 정규화 시 xml:id=1 (따옴표 제거) 또는 id="1"(접두사 제거) 등.
-    #   정규식 id="?N["> ] 로 따옴표·접두사 유무를 모두 흡수하고, 뒤 경계로 부분숫자 오탐을 막는다.
-    sh:sparql [
-        sh:message "본문 fullText 에 대응하는 (xml:)id 가 없는 인용 앵커가 있다." ;
-        sh:select """
-            SELECT $this ?anchor WHERE {
-                $this <http://example.org/pac#fullText> ?ft ;
-                      <http://example.org/pac#hasQuotation> ?q .
-                ?q <http://www.w3.org/ns/oa#hasBody> ?body .
-                ?body <http://www.w3.org/ns/oa#hasSelector> ?fs .
-                ?fs a <http://www.w3.org/ns/oa#FragmentSelector> ;
-                    <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> ?anchor .
-                FILTER(!REGEX(STR(?ft), CONCAT('id="?', ?anchor, '["> ]')))
-            }
-        """ ] ;
-    sh:sparql [
-        sh:message "한 비평문 안에서 같은 인용 앵커(xml:id)가 둘 이상 쓰였다." ;
-        sh:select """
-            SELECT $this (?anchor AS ?value) WHERE {
-                $this <http://example.org/pac#hasQuotation> ?q .
-                ?q <http://www.w3.org/ns/oa#hasBody>/<http://www.w3.org/ns/oa#hasSelector> ?fs .
-                ?fs a <http://www.w3.org/ns/oa#FragmentSelector> ;
-                    <http://www.w3.org/1999/02/22-rdf-syntax-ns#value> ?anchor .
-            } GROUP BY $this ?anchor HAVING (COUNT(DISTINCT ?q) > 1)
-        """ ] .
+        sh:message "비평문은 인용을 하나 이상 포함한다." ] .
 
 #######################################################################
 # 3. 인용 (Web Annotation)
@@ -136,10 +109,7 @@ pac:QuotationShape a sh:NodeShape ;
     sh:property [
         sh:path [ sh:inversePath pac:hasQuotation ] ; sh:minCount 1 ;
         sh:message "인용은 어떤 비평문의 pac:hasQuotation 으로 참조되어야 한다." ] ;
-    # body: 정확히 1, BodyShape 충족
-    sh:property [
-        sh:path oa:hasBody ; sh:minCount 1 ; sh:maxCount 1 ; sh:node pac:BodyShape ;
-        sh:message "인용은 본문 표지(oa:hasBody) 하나를 가진다." ] ;
+    # v0.6: body(oa:hasBody) 비발행 — 그 제약을 제거한다. 인용은 target 으로 자기완결한다.
     # target: 1개 이상, TargetShape 충족
     sh:property [
         sh:path oa:hasTarget ; sh:minCount 1 ; sh:node pac:TargetShape ;
@@ -156,22 +126,7 @@ pac:QuotationShape a sh:NodeShape ;
             }
         """ ] .
 
-# body = 비평문 속 인용 표지
-pac:BodyShape a sh:NodeShape ;
-    sh:property [
-        sh:path oa:hasSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:class bibo:Article ;
-        sh:message "본문 표지의 출처(oa:hasSource)는 비평문이어야 한다." ] ;
-    sh:property [
-        sh:path oa:hasSelector ; sh:minCount 1 ;
-        sh:message "본문 표지는 선택자(oa:hasSelector)를 하나 이상 가진다." ] ;
-    # FragmentSelector(xml:id) 하나 이상
-    sh:property [
-        sh:path oa:hasSelector ;
-        sh:qualifiedValueShape [
-            sh:class oa:FragmentSelector ;
-            sh:property [ sh:path rdf:value ; sh:minCount 1 ; sh:datatype xsd:string ] ] ;
-        sh:qualifiedMinCount 1 ;
-        sh:message "본문 표지에는 xml:id 를 가리키는 oa:FragmentSelector(rdf:value 포함)가 필요하다." ] .
+# v0.6: pac:BodyShape 제거 — body(인용 표지)는 발행하지 않으므로 검증할 노드가 없다.
 
 # target = 원시 속 인용 대상
 pac:TargetShape a sh:NodeShape ;
@@ -225,11 +180,5 @@ pac:TextQuoteSelectorShape a sh:NodeShape ;
         sh:path oa:exact ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
         sh:message "인용문구 선택자는 정확 문구(oa:exact) 하나를 가져야 한다." ] .
 
-pac:FragmentSelectorShape a sh:NodeShape ;
-    sh:targetClass oa:FragmentSelector ;
-    sh:property [
-        sh:path rdf:value ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-        sh:message "조각 선택자는 조각 값(rdf:value = xml:id) 하나를 가져야 한다." ] ;
-    sh:property [
-        sh:path dct:conformsTo ; sh:nodeKind sh:IRI ; sh:severity sh:Warning ;
-        sh:message "조각 선택자에는 dct:conformsTo(조각 규격) 표기가 권장된다." ] .
+# v0.6: pac:FragmentSelectorShape 제거 — body 의 FragmentSelector(xml:id)는 발행하지 않으므로
+#       발행 그래프에 oa:FragmentSelector 인스턴스가 더는 없다(검증 대상 소멸).

@@ -23,7 +23,7 @@ function page_lod(Repo $repo, array $cfg): array
     $body = <<<HTML
 <section class="hero small">
   <h1>LOD 발행</h1>
-  <p class="lead">편집 원본(SQLite)을 PAC v{$ontVer} 온톨로지에 충실한 Linked Open Data 로 직렬화합니다. 현재 ABox <b>{$n}</b> 트리플.</p>
+  <p class="lead">편집 원본(SQLite)을 PAC v{$ontVer} 온톨로지로 <b>외부 추론용</b> Linked Open Data 로 발행합니다(GUI 잔재 비발행). 현재 ABox <b>{$n}</b> 트리플.</p>
 </section>
 
 <section class="panel">

@@ -1,4 +1,4 @@
-# PAC 시 마크업 XML (poem markup) — v0.5.0
+# PAC 시 마크업 XML (poem markup) — v0.6.0
 
 시(詩)의 **본문 구조(연/행)** 를 기술하는 아주 단순한 XML이다. PACO 에서 시 본문의
 **정식 소스**(`poem.body_xml`)로 쓰이며, 이로부터 표시·연/행 선택·인용 좌표가 파생된다.

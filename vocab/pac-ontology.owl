@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  PAC Ontology (Poetry And Critique) — v0.5.0
+  PAC Ontology (Poetry And Critique) — v0.6.0
   ===========================================
   비평문을, 그것이 인용하는 시·시집 문구와 함께 저장·연결하고,
   비평 대상 시인을 Wikidata(LOD)와 연결하여 추론 질의를 지원하는 온톨로지.
@@ -9,6 +9,20 @@
     구성은 그 안에서 처리된다. 본 어휘는 시스템이 저장한 사실을 외부에 LOD 로 발행하기 위한
     매핑 결과물일 뿐이다(흐름: RDB→GUI 와 RDB→LOD 가 병행, GUI 는 LOD 를 거치지 않는다).
     3계층 매핑표는 README/명세서 참조.
+
+  v0.5.0 → v0.6.0 변경 (발행 LOD 를 '외부 추론용 학술 그래프'로 재정향 — GUI 잔재 비발행):
+   - 발행 목적 재정향: 발행 LOD 는 비평가의 비평 궤적·성장을 외부 LOD 와 연계해 추론하기 위한
+       학술 그래프다(GUI 직렬화의 충실한 사본이 아니다). v0.5 #3 이 "내부 앵커(정규 발행 사실
+       아님)"라 주석만 달고 발행은 했던 반걸음을, 실제 비발행으로 완성한다.
+   - 비발행 ①: 비평문 속 인용 표지 body. pac:Quotation 에서 oa:hasBody(→oa:SpecificResource
+       →oa:FragmentSelector→rdf:value=xml:id)를 더는 싣지 않는다. 그 xml:id 는 GUI 분할뷰용
+       내부 앵커일 뿐 외부 추론엔 노이즈다. 인용은 oa:hasTarget 만 갖는다(oa: 상 적법).
+   - 비발행 ②: pac:fullText(비평문 전문 HTML). 외부 추론의 조인 키가 아니고, 그 안의
+       <q xml:id> 가 ①의 앵커를 다시 흘리는 통로이므로 함께 제외한다. 전문은 시스템 내부에만 남는다.
+   - 유지: 인용 대상 target(oa:hasTarget · pac:TextSelection 연/행 · oa:exact) · pac:quotationType ·
+       cito:critiques · owl:sameAs. 이것이 '다음에 어떤 시인' 류 외부 추론의 조인 경로다.
+   - SQLite 스키마·RDB 무변경(SCHEMA_VERSION=4). 시 본문 LOD 비발행 불변식 유지(내부 앵커도 비발행으로 확장).
+   - SHACL(pac-shapes.ttl): BodyShape·FragmentSelectorShape·oa:hasBody/fullText 제약을 동기화 제거.
 
   v0.4.0 → v0.5.0 변경 (외부 어휘 비훼손의 일관 적용 + 어휘의 '발행 산출물' 명문화):
    - 인용 유형(pac:QuotationType): 빈 클래스 → owl:oneOf 닫힌 열거(equivalentClass)
@@ -88,8 +102,8 @@
   <owl:Ontology rdf:about="http://example.org/pac">
     <rdfs:label xml:lang="ko">PAC 온톨로지 (Poetry And Critique)</rdfs:label>
     <rdfs:comment xml:lang="ko">비평문과 그 인용 대상(시/시집)을 연결하여 저장하고, 비평 대상 시인을 Wikidata와 연결해 추론 질의를 지원하는 온톨로지. 이 온톨로지는 시스템(RDB+소스코드)이 저장한 사실을 외부에 발행하기 위한 매핑 산출물이며, 웹 GUI 구성을 위한 어휘가 아니다(3계층 분리). 인용은 W3C Web Annotation Data Model(oa:)을 따른다. 인스턴스 생성은 pac:Poet, pac:Critic, bibo:Book(시집은 pac:PoetryCollection 동시 부여), bibo:Article(비평문은 pac:CriticalEssay 동시 부여), pac:Poem, pac:Quotation 및 그 주석 구성요소(oa:SpecificResource, oa:Selector 하위, pac:TextSelection)에 허용한다.</rdfs:comment>
-    <owl:versionInfo>0.5.0</owl:versionInfo>
-    <owl:priorVersion rdf:resource="http://example.org/pac/0.4.0"/>
+    <owl:versionInfo>0.6.0</owl:versionInfo>
+    <owl:priorVersion rdf:resource="http://example.org/pac/0.5.0"/>
     <rdfs:seeAlso rdf:resource="http://example.org/pac/shapes"/>
   </owl:Ontology>
 
@@ -146,7 +160,7 @@
 
   <owl:Class rdf:about="&oa;FragmentSelector">
     <rdfs:label xml:lang="ko">조각 선택자</rdfs:label>
-    <rdfs:comment xml:lang="ko">URI 조각(fragment)으로 부분을 지정한다. 본 온톨로지에서는 비평문 본문의 &lt;q xml:id="N"&gt; 요소를 rdf:value="N" 으로 가리키는 데 쓴다(dct:conformsTo = xml:id 규격). v0.4 에서 body(인용 표지)는 이 선택자 하나로 지정한다. rdf:value 의 xml:id 는 우리 HTML 직렬화의 내부 식별자이지 외부 공표 fragment 가 아니다(정규 발행 사실 아님).</rdfs:comment>
+    <rdfs:comment xml:lang="ko">URI 조각(fragment)으로 자원의 한 부분을 지정하는 oa: 표준 선택자. v0.5 까지는 비평문 본문의 &lt;q xml:id="N"&gt; 표지를 rdf:value="N" 으로 가리키는 body 선택자로 썼으나, 그 xml:id 는 GUI 분할뷰용 내부 앵커일 뿐이라 v0.6 부터 발행 LOD 에 싣지 않는다(body 비발행). 따라서 발행 그래프에는 oa:FragmentSelector 인스턴스가 없다. 이 클래스 선언은 oa: 어휘 참조·이력 보존용으로 잔존한다.</rdfs:comment>
     <rdfs:subClassOf rdf:resource="&oa;Selector"/>
   </owl:Class>
 
@@ -192,7 +206,7 @@
   <!-- E : 인용 = Web Annotation -->
   <owl:Class rdf:about="&pac;Quotation">
     <rdfs:label xml:lang="ko">인용 (E)</rdfs:label>
-    <rdfs:comment xml:lang="ko">하나의 비평문 안에서 사용된 하나의 인용. oa:Annotation 의 하위로서, oa:hasBody 로 비평문 본문 속 인용 표지를, oa:hasTarget 로 원시(시) 속 인용 대상을 가리킨다. 대상이 둘 이상이면 비연속(discontinuous) 인용이다.</rdfs:comment>
+    <rdfs:comment xml:lang="ko">하나의 비평문 안에서 사용된 하나의 인용. oa:Annotation 의 하위로서 oa:hasTarget 로 원시(시) 속 인용 대상을 가리킨다. 대상이 둘 이상이면 비연속(discontinuous) 인용이다. (v0.6: 비평문 속 인용 표지는 GUI 내부 앵커이므로 발행 LOD 에는 oa:hasBody 를 싣지 않는다 — 인용의 의미는 pac:quotationType 과 target 으로 자기완결하고, 비평문↔인용 연결은 비평문의 pac:hasQuotation 으로 유지된다.)</rdfs:comment>
     <rdfs:subClassOf rdf:resource="&oa;Annotation"/>
   </owl:Class>
 
@@ -284,7 +298,7 @@
   <!-- Web Annotation object properties (외부: 지역 공리 없음) -->
   <owl:ObjectProperty rdf:about="&oa;hasBody">
     <rdfs:label xml:lang="ko">본문을 가진다</rdfs:label>
-    <rdfs:comment xml:lang="ko">주석의 본문. 본 온톨로지에서는 비평문 안의 인용 표지(어디서 인용했는가)를 가리킨다.</rdfs:comment>
+    <rdfs:comment xml:lang="ko">주석의 본문. 본 온톨로지에서 비평문 속 인용 표지(어디서 인용했는가)를 가리키는 데 썼으나, 그 표지는 GUI 분할뷰용 내부 앵커이므로 v0.6 부터 발행 LOD 에 싣지 않는다(비발행). 인용은 oa:hasTarget 만으로 발행되며, 이 속성 선언은 oa: 어휘 참조·이력 보존용으로 잔존한다.</rdfs:comment>
   </owl:ObjectProperty>
   <owl:ObjectProperty rdf:about="&oa;hasTarget">
     <rdfs:label xml:lang="ko">대상을 가진다</rdfs:label>
@@ -403,7 +417,7 @@
   <owl:DatatypeProperty rdf:about="&pac;fullText">
     <rdf:type rdf:resource="&owl;FunctionalProperty"/>
     <rdfs:label xml:lang="ko">본문</rdfs:label>
-    <rdfs:comment xml:lang="ko">비평문 본문. &lt;q xml:id="..."&gt; 요소로 인용 표지를 단 HTML. 각 q 요소는 해당 Quotation 의 oa:hasBody → oa:FragmentSelector(rdf:value=그 xml:id) 로 가리켜진다. 이 리터럴과 그 안의 &lt;q xml:id&gt; 는 발행 시점 RDB→HTML 직렬화에서 생긴 내부 표시 앵커이며 정규 발행 사실이 아니다. 인용의 의미는 pac:quotationType·pac:TextSelection·oa:exact(target)·cito:critiques 로 자기완결적으로 표현된다. 외부 소비자는 이 HTML 구조에 의존하지 말 것.</rdfs:comment>
+    <rdfs:comment xml:lang="ko">비평문 본문(시스템 내부 속성). &lt;q xml:id="..."&gt; 표지를 단 HTML 로 RDB(article.full_text)에 저장되어 GUI 분할뷰·편집기를 구동한다. 이 전문과 그 안의 &lt;q xml:id&gt; 는 GUI 직렬화 산물이며 외부 추론의 조인 키가 아니므로, v0.6 부터 발행 LOD 에 싣지 않는다(비발행). 인용의 의미는 pac:quotationType·pac:TextSelection·oa:exact(target)·cito:critiques 로 자기완결적으로 표현된다. 이 속성 선언은 시스템 데이터 모델 문서화·이력 보존용으로 잔존한다.</rdfs:comment>
     <rdfs:domain rdf:resource="&bibo;Article"/>
     <rdfs:range rdf:resource="&rdf;HTML"/>
   </owl:DatatypeProperty>
@@ -415,7 +429,7 @@
     <rdfs:range rdf:resource="&xsd;string"/>
   </owl:DatatypeProperty>
 
-  <!-- 외부: dct:conformsTo (FragmentSelector 의 조각 규격 표기) -->
+  <!-- 외부: dct:conformsTo (v0.5 까지 FragmentSelector 의 조각 규격 표기; v0.6 비발행으로 발행 그래프 미사용 — 어휘 참조용 잔존) -->
   <owl:AnnotationProperty rdf:about="&dct;conformsTo">
     <rdfs:label xml:lang="ko">준거 규격</rdfs:label>
   </owl:AnnotationProperty>

@@ -1,6 +1,6 @@
 <?php
 /**
- * RDF 직렬화 — SQLite 데이터를 PAC 온톨로지(ont_version)에 충실한 LOD 로 발행.
+ * RDF 직렬화 — SQLite 데이터를 PAC 온톨로지(ont_version) LOD 로 발행.
  *
  * 절차: Repo 데이터 → 트리플 그래프(Graph) → 4형식 직렬화.
  *   - N-Triples : 검증·디버그용(항상 정확)
@@ -8,9 +8,12 @@
  *   - RDF/XML   : Protégé/rdflib 호환(DOM 으로 생성, well-formed 보장)
  *   - JSON-LD   : 웹 친화 발행본
  *
- * 인용(oa:Annotation) 구조는 v0.4 pac-sample.owl 과 동일한 중첩(SpecificResource/
- * Selector 를 빈노드로)으로 재현한다. quotedFrom·dct:creator 등 도출 트리플은
- * 추론기 몫이므로 발행하지 않는다(원본 데이터만 발행).
+ * 발행 LOD 는 '비평가 궤적·성장 추론용 학술 그래프'다 — GUI 직렬화의 충실한 사본이 아니다.
+ * 따라서 외부 추론에 무의미한 GUI 잔재는 발행하지 않는다(v0.6):
+ *   - 비평문 속 인용 표지 body(oa:hasBody→FragmentSelector→xml:id) — GUI 분할뷰용 내부 앵커.
+ *   - pac:fullText(비평문 전문 HTML) — 인용 의미는 target 으로 자기완결, 전문은 추론 대상 아님.
+ * 발행하는 것: 인물·문헌·인용 대상(target = 시 위치 oa:exact·연/행)과 외부 LOD 링크(owl:sameAs).
+ * quotedFrom·dct:creator 등 도출 트리플도 추론기 몫이라 발행하지 않는다(원본 사실만 발행).
  */
 
 namespace PACO;
@@ -116,38 +119,28 @@ final class Rdf
             if (!empty($art['critiques_id'])) {
                 $g->add($s, 'cito:critiques', $D($art['critiques_id']));
             }
-            if (($art['full_text'] ?? '') !== '') {
-                $g->add($s, 'pac:fullText', self::lit($art['full_text'], 'rdf:HTML'));
-            }
+            // v0.6: pac:fullText(비평문 전문 HTML)는 발행하지 않는다. 전문은 외부 추론의
+            // 조인 키가 아니고, 그 안의 <q xml:id> 는 GUI 분할뷰용 내부 앵커(노이즈)다.
+            // 비평문 본문은 시스템 내부(RDB article.full_text·GUI)에만 남는다.
             foreach ($repo->quotations($art['id']) as $q) {
                 $g->add($s, 'pac:hasQuotation', $D($q['id']));
-                self::buildQuotation($g, $D, $q, $art['id']);
+                self::buildQuotation($g, $D, $q);
             }
         }
         return $g;
     }
 
-    private static function buildQuotation(self $g, callable $D, array $q, string $articleId): void
+    private static function buildQuotation(self $g, callable $D, array $q): void
     {
         $qs = $D($q['id']);
         $g->add($qs, 'rdf:type', $g->curie('pac:Quotation'));
         $qtIri = $q['qtype'] === 'direct' ? 'pac:DirectQuotation' : 'pac:IndirectQuotation';
         $g->add($qs, 'pac:quotationType', $g->curie($qtIri));
 
-        // ---- body (비평문 속 인용 표지) ----
-        $body = self::bnode($q['id'] . '_body');
-        $g->add($qs, 'oa:hasBody', $body);
-        $g->add($body, 'rdf:type', $g->curie('oa:SpecificResource'));
-        $g->add($body, 'oa:hasSource', $D($articleId));
-        // FragmentSelector(xml:id)
-        $frag = self::bnode($q['id'] . '_bodyfrag');
-        $g->add($body, 'oa:hasSelector', $frag);
-        $g->add($frag, 'rdf:type', $g->curie('oa:FragmentSelector'));
-        $g->add($frag, 'dct:conformsTo', self::iri('https://www.w3.org/TR/xml-id/'));
-        $g->add($frag, 'rdf:value', self::lit((string) $q['anchor']));
-        // v0.4: body 는 FragmentSelector(xml:id) 하나로 충분.
-        // 표지 문구는 pac:fullText 의 <q xml:id> 에 이미 있으므로 body 쪽
-        // oa:TextQuoteSelector(및 prefix/suffix)는 발행하지 않는다.
+        // v0.6: body(비평문 속 인용 표지)는 발행하지 않는다. 그 표지는 GUI 분할뷰용 내부
+        // 앵커(quotation.anchor = fullText 의 <q xml:id>)일 뿐, 외부 추론엔 무의미한 노이즈다.
+        // 인용의 의미는 pac:quotationType + target(아래)으로 자기완결하고, 비평문↔인용 연결은
+        // article 레벨 pac:hasQuotation 으로 유지된다. (oa: 상 target-only 어노테이션은 적법)
 
         // ---- targets (원시 속 인용 대상) ----
         $k = 0;

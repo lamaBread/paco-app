@@ -3,8 +3,8 @@
  * PACO — Poem And Criticism Ontology platform
  * 전역 설정.
  *
- * 편집 원본은 SQLite(data/paco.sqlite). LOD(RDF/XML·Turtle·JSON-LD)는
- * 이 데이터로부터 온톨로지(vocab/pac-ontology.owl)에 충실하게 생성된다.
+ * 편집 원본은 SQLite(data/paco.sqlite). LOD(RDF/XML·Turtle·JSON-LD)는 이 데이터에서
+ * 온톨로지(vocab/pac-ontology.owl)로 발행한다 — 외부 추론용 원본 사실만(GUI 잔재 비발행).
  */
 
 // 이 파일은 **출하 기본값**이다. 자가 업데이트(bin/self-update.php · 업데이트 탭)가
@@ -16,7 +16,7 @@ return [
     // 온톨로지(TBox/SHACL) 버전 — 앱 버전(VERSION)과 별개의 어휘 세트 버전이다.
     // 발행물·GUI 표시('PAC 온톨로지 vX')의 단일 소스. 어휘를 개정하면 여기 한 곳만 올린다.
     //   사용처: render.php 푸터 · pages_lod.php(설명·어휘 행) · Rdf.php Turtle 헤더 · vocab/*.
-    'ont_version' => '0.5.0',
+    'ont_version' => '0.6.0',
     // 원클릭 업데이트가 버전 태그를 읽고 클론하는 공개 repo.
     // PACO_REPO_URL 로 덮어쓸 수 있다(포크/미러 또는 로컬 테스트용).
     'repo'      => [
