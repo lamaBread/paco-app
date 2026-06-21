@@ -1,6 +1,6 @@
 <?php
 /**
- * RDF 직렬화 — SQLite 데이터를 PAC v0.4 온톨로지에 충실한 LOD 로 발행.
+ * RDF 직렬화 — SQLite 데이터를 PAC 온톨로지(ont_version)에 충실한 LOD 로 발행.
  *
  * 절차: Repo 데이터 → 트리플 그래프(Graph) → 4형식 직렬화.
  *   - N-Triples : 검증·디버그용(항상 정확)
@@ -22,7 +22,7 @@ final class Rdf
     /** @var array<string,bool> 등장 주어 순서 보존 */
     private array $subjectOrder = [];
 
-    public function __construct(private array $prefixes) {}
+    public function __construct(private array $prefixes, private string $ontVersion = 'dev') {}
 
     // ---- 용어 생성 (term factory) ----
     public static function iri(string $full): array { return ['type' => 'iri', 'v' => $full]; }
@@ -54,7 +54,7 @@ final class Rdf
     {
         $prefixes = $cfg['prefixes'];
         $prefixes['pacd'] = $cfg['iri_data'];
-        $g = new self($prefixes);
+        $g = new self($prefixes, (string) ($cfg['ont_version'] ?? 'dev'));
         $D = fn(string $id) => self::iri($cfg['iri_data'] . $id);
 
         $a = 'rdf:type';
@@ -86,6 +86,7 @@ final class Rdf
         foreach ($repo->books() as $b) {
             $s = $D($b['id']);
             $g->add($s, $a, $g->curie('bibo:Book'));
+            $g->add($s, $a, $g->curie('pac:PoetryCollection')); // v0.5: 응용 하위클래스 동시 발행(raw 소비자 bibo:Book 보존)
             $g->add($s, 'pac:documentTitle', self::lit($b['title']));
             if (!empty($b['author_id'])) $g->add($s, 'pac:hasAuthor', $D($b['author_id']));
             if (!empty($b['isbn13']))    $g->add($s, 'bibo:isbn13', self::lit($b['isbn13']));
@@ -106,6 +107,7 @@ final class Rdf
         foreach ($repo->articles() as $art) {
             $s = $D($art['id']);
             $g->add($s, $a, $g->curie('bibo:Article'));
+            $g->add($s, $a, $g->curie('pac:CriticalEssay')); // v0.5: 응용 하위클래스 동시 발행
             $g->add($s, 'pac:documentTitle', self::lit($art['title']));
             if (!empty($art['author_id'])) $g->add($s, 'pac:hasAuthor', $D($art['author_id']));
             if (!empty($art['created'])) {
@@ -240,7 +242,7 @@ final class Rdf
     // ---- Turtle ----
     public function toTurtle(): string
     {
-        $out = "# PACO LOD — Turtle (PAC v0.4 온톨로지 인스턴스)\n";
+        $out = "# PACO LOD — Turtle (PAC v{$this->ontVersion} 온톨로지 인스턴스)\n";
         foreach ($this->prefixes as $p => $ns) {
             $out .= "@prefix $p: <$ns> .\n";
         }

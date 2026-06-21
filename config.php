@@ -13,6 +13,10 @@
 return [
     // ---- 버전 / 저장소(자가 업데이트) ----
     'version'   => trim((string) @file_get_contents(__DIR__ . '/VERSION')) ?: 'dev',
+    // 온톨로지(TBox/SHACL) 버전 — 앱 버전(VERSION)과 별개의 어휘 세트 버전이다.
+    // 발행물·GUI 표시('PAC 온톨로지 vX')의 단일 소스. 어휘를 개정하면 여기 한 곳만 올린다.
+    //   사용처: render.php 푸터 · pages_lod.php(설명·어휘 행) · Rdf.php Turtle 헤더 · vocab/*.
+    'ont_version' => '0.5.0',
     // 원클릭 업데이트가 버전 태그를 읽고 클론하는 공개 repo.
     // PACO_REPO_URL 로 덮어쓸 수 있다(포크/미러 또는 로컬 테스트용).
     'repo'      => [
@@ -31,7 +35,7 @@ return [
     'dist_dir'  => getenv('PACO_DIST_DIR') ?: __DIR__ . '/dist',
 
     // ---- LOD IRI 전략: 통합 덤프 + 설정형 base IRI ----
-    // TBox(온톨로지 용어). v0.4 명세와 동일.
+    // TBox(온톨로지 용어). 버전은 ont_version(위) 참조 — IRI 자체는 버전 비의존.
     'iri_tbox'  => 'http://example.org/pac#',
     // ABox(인스턴스) 기본값. 운영 도메인은 설정 페이지(app_setting.iri_data)에서 바꾼다.
     //   예: 'https://my-archive.example/paco/data/'

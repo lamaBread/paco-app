@@ -91,6 +91,7 @@ function layout(string $title, string $body, array $ctx = []): string
 
     $year = date('Y');
     $ver  = h((string) ($cfg['version'] ?? 'dev'));
+    $ontVer = h((string) ($cfg['ont_version'] ?? 'dev'));
     // 사용자 설정값(app_name 등)·페이지 제목은 출력 시 이스케이프(설정에서 들어온 값일 수 있음).
     $titleEsc = h($title);
     $appEsc   = h($app);
@@ -115,7 +116,7 @@ function layout(string $title, string $body, array $ctx = []): string
 </main>
 <footer class="foot">
   <span>{$appEsc} <span class="muted">v{$ver}</span> — {$descEsc}</span>
-  <span>PAC 온톨로지 v0.4 · W3C Web Annotation · LOD(RDF/XML·Turtle·JSON-LD) · &copy; {$year}</span>
+  <span>PAC 온톨로지 v{$ontVer} · W3C Web Annotation · LOD(RDF/XML·Turtle·JSON-LD) · &copy; {$year}</span>
 </footer>
 <script src="assets/app.js"></script>
 </body>

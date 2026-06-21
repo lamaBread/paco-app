@@ -9,7 +9,45 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 > 자세한 절차는 `../paco-harness/HARNESS.md` 참고.
 
 ## [Unreleased]
-- (작업 중)
+- (없음)
+
+## [0.5.0] — 2026-06-21
+> 온톨로지(TBox)를 외부 어휘 비훼손 원칙에 맞게 정직화하고, 온톨로지가 "발행 매핑 산출물"임을
+> 어휘·문서로 명문화한다. SQLite 스키마·발행 데이터 무변경(`SCHEMA_VERSION`=4) — 시 본문 LOD
+> 비발행 불변식 유지. v0.4.2 의문 목록(#1~#4) 대응.
+
+### Added
+- **시집/비평문 응용 하위클래스.** `pac:PoetryCollection ⊑ bibo:Book`,
+  `pac:CriticalEssay ⊑ bibo:Article` 신설. 발행 시 인스턴스가 bibo 표준 타입과 pac 하위타입을
+  **함께** 갖는다(추론기 없는 소비자도 `?x a bibo:Book` 으로 조회 가능). (`vocab/pac-ontology.owl`
+  · `src/Rdf.php` books/articles 루프) (#2)
+- **3계층(RDB+소스코드 / `Rdf.php` 매핑 / 발행 온톨로지) 매핑표**를 `README.md`·명세서에 추가. 온톨로지가
+  시스템이 아니라 발행 결과물임을 명문화. (#3)
+- **온톨로지 버전 단일 소스 `config.ont_version`.** 발행물·GUI 의 'PAC 온톨로지 vX' 표시를 한 곳에서
+  관리(`render.php` 푸터 · `pages_lod.php` · `Rdf.php` Turtle 헤더). 앱 버전(`VERSION`)과 분리. (#3)
+
+### Changed
+- **`pac:QuotationType` 을 닫힌 열거로 정직화** — 빈 `owl:Class` → `owl:equivalentClass owl:oneOf
+  {DirectQuotation, IndirectQuotation}` + `owl:NamedIndividual` + `owl:AllDifferent`. 발행 그래프의
+  IRI 는 동일해 SHACL `sh:in` 무변경. (#1)
+- **`bibo:Book`/`bibo:Article` 의 도메인 한국어 라벨('시집'/'비평문')을 중립 라벨('도서(외부)'/
+  '글·기고(외부)')로 환원** — 외부 어휘 비훼손. 응용 의미는 위 하위클래스가 담는다. (#2)
+- **`pac:fullText`·`oa:FragmentSelector`·`pac:TextSelection` 에 "내부 직렬화 앵커(정규 발행 사실
+  아님)" 주석 추가** — 층위 분리 가시화. (#3)
+- 온톨로지/SHACL `versionInfo` 0.4.0 → 0.5.0, `priorVersion` 0.3.0 → 0.4.0. 앱·발행물의 'v0.4'
+  표시 문자열 갱신(render 푸터, pages_lod, `Rdf.php` Turtle 헤더, `vocab/` 헤더, README).
+
+### 데이터 마이그레이션
+- **없음.** `SCHEMA_VERSION` 무변경(=4). SQLite 스키마/행 무변형. TBox·SHACL(주석)·버전 문자열과
+  `Rdf.php` 타입 트리플 2줄(추가형)만 변경 — 시 본문 비발행 불변식 유지.
+- 검증: v0.1.0~v0.4.2(6 fixture) `paco test-migration` 통과(행수 보존·전 라우트 HTTP 200),
+  시드 q1~q4 발행 동일(+ 시집/비평문에 하위타입 1개씩 추가). pyshacl 은 `_ontology_legacy/v0.5`
+  에서 수동 검증.
+
+### 비고
+- #4(fulltext 중복): 실제 중복은 `oa:exact`(인용 발췌) ↔ 본문 슬라이스뿐이며 의도적 lossy 사본임을
+  확인. 진짜 "본문 1회 저장 + 선택자 참조"는 **시 본문 LOD 발행**(불변식 변경)이 전제라 본 릴리스
+  범위에서 제외(후속 릴리스 후보). publish-time `oa:exact` 파생은 시드 발행 리터럴을 바꾸므로 기각.
 
 ## [0.4.2] — 2026-06-08
 > 인용 편집기를 **3분할 워크벤치**로 개편한다. 시 본문을 옆에 펼쳐 두고 연·행 좌표를 보며 입력하고,
@@ -198,7 +236,11 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 - 최초 버전 — 마이그레이션 대상 없음. 이 버전의 시드 DB가 이후 버전 호환성
   테스트의 **기준 fixture**(`paco-harness/fixtures/0.1.0/`)가 된다.
 
-[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/lamaBread/paco-app/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/lamaBread/paco-app/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/lamaBread/paco-app/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/lamaBread/paco-app/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/lamaBread/paco-app/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lamaBread/paco-app/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lamaBread/paco-app/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lamaBread/paco-app/releases/tag/v0.1.0

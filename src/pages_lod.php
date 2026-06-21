@@ -18,11 +18,12 @@ function page_lod(Repo $repo, array $cfg): array
 
     $base = h($cfg['iri_data']);
     $tbox = h($cfg['iri_tbox']);
+    $ontVer = h((string) ($cfg['ont_version'] ?? 'dev'));
 
     $body = <<<HTML
 <section class="hero small">
   <h1>LOD 발행</h1>
-  <p class="lead">편집 원본(SQLite)을 PAC v0.4 온톨로지에 충실한 Linked Open Data 로 직렬화합니다. 현재 ABox <b>{$n}</b> 트리플.</p>
+  <p class="lead">편집 원본(SQLite)을 PAC v{$ontVer} 온톨로지에 충실한 Linked Open Data 로 직렬화합니다. 현재 ABox <b>{$n}</b> 트리플.</p>
 </section>
 
 <section class="panel">
@@ -36,7 +37,7 @@ function page_lod(Repo $repo, array $cfg): array
   <table class="kv">
     <tr><th>TBox IRI</th><td><code>{$tbox}</code></td></tr>
     <tr><th>ABox base IRI</th><td><code>{$base}</code> <small>— config.php 의 <code>iri_data</code> 를 배포 도메인으로 바꾸면 발행 IRI 가 함께 바뀝니다.</small></td></tr>
-    <tr><th>어휘(TBox)</th><td>vocab/pac-ontology.owl · vocab/pac-shapes.ttl (v0.4)</td></tr>
+    <tr><th>어휘(TBox)</th><td>vocab/pac-ontology.owl · vocab/pac-shapes.ttl (v{$ontVer})</td></tr>
   </table>
   <p class="note">검증(SHACL): <code>pyshacl -s vocab/pac-shapes.ttl -e vocab/pac-ontology.owl -df ttl pac-data.ttl</code></p>
 </section>

@@ -1,6 +1,6 @@
 # PACO — Poem And Criticism Ontology
 
-시(詩)를 인용하는 **비평문을 W3C Web Annotation 모델로 기입·관리**하고, **PAC 온톨로지(v0.4)에 충실한 LOD**(RDF/XML·Turtle·JSON-LD·N-Triples)로 발행하는 로컬 우선(local-first) 웹 시스템.
+시(詩)를 인용하는 **비평문을 W3C Web Annotation 모델로 기입·관리**하고, **PAC 온톨로지(v0.5)에 충실한 LOD**(RDF/XML·Turtle·JSON-LD·N-Triples)로 발행하는 로컬 우선(local-first) 웹 시스템.
 
 > 부제 **詩話(시화)** — 시에 대한 비평적 단평을 모은 동아시아 고전 장르에서.
 > 순수 PHP 8.1 + SQLite. 빌드 스텝·외부 프레임워크 없음.
@@ -10,7 +10,7 @@
 ## 빠른 시작
 
 ```bash
-php bin/init-db.php --fresh        # SQLite 생성 + v0.4 샘플 시드(황인찬 「순례」)
+php bin/init-db.php --fresh        # SQLite 생성 + 샘플 시드(황인찬 「순례」)
 php -S localhost:8001 -t public    # 편집 앱 실행 → http://localhost:8001
 ```
 
@@ -67,7 +67,7 @@ php -S localhost:8002 -t dist      # 빌드 결과 미리보기
 ```
 paco/
 ├─ config.php          # 출하 기본값(경로·IRI base·접두사·Wikidata·repo). 사용자값은 DB(설정 페이지)
-├─ VERSION             # 0.2.0  ← 푸터 표시·자가 업데이트 비교 기준
+├─ VERSION             # 현행 앱 버전 ← 푸터 표시·자가 업데이트 비교 기준(동적)
 ├─ public/
 │  ├─ index.php        # 프론트 컨트롤러(라우터 + 액션)
 │  └─ assets/          # app.css · app.js(q-연결, 드래그 태깅)
@@ -81,29 +81,38 @@ paco/
 │  ├─ render.php       # 레이아웃 + URL 헬퍼(동적/정적 공용)
 │  └─ pages_*.php      # 페이지 컨트롤러 (… + pages_admin: 설정·업데이트)
 ├─ bin/
-│  ├─ init-db.php      # 스키마 + v0.4 샘플 시드
+│  ├─ init-db.php      # 스키마 + 샘플 시드
 │  ├─ migrate.php      # 마이그레이션 실행기(DB 열어 부족한 스키마 단계 적용)
 │  ├─ self-update.php  # 자가 업데이트 CLI (--check / 버전)
 │  └─ build.php        # 정적 아카이브 생성
-├─ vocab/              # pac-ontology.owl · pac-shapes.ttl (v0.4, 어휘 원천)
+├─ vocab/              # pac-ontology.owl · pac-shapes.ttl · poem-xml.md (v0.5, 어휘 원천)
 ├─ data/paco.sqlite    # 편집 원본(생성됨) · data/backups/(마이그레이션·업데이트 백업)
 └─ dist/               # 정적 빌드 산출물(생성됨)
 ```
 
-## 온톨로지 ↔ 관계형 사상
+## 3계층 분리 — 온톨로지는 '시스템'이 아니라 '발행 산출물'
 
-| 온톨로지(v0.4) | 테이블 |
-|---|---|
-| `pac:Poet` / `pac:Critic` (⊑ `foaf:Person`) | `person(is_poet,is_critic,same_as)` |
-| `bibo:Book` | `book` |
-| `pac:Poem` (+ 연/행 본문은 표시용 내부 데이터) | `poem` / `poem_line` |
-| `bibo:Article` (`pac:fullText` rdf:HTML) | `article` |
-| `pac:Quotation` = `oa:Annotation` 의 body | `quotation` |
-| `oa:hasTarget`(SpecificResource) 1..N | `quotation_target` |
+> **이 온톨로지(`vocab/`)는 시스템이 아니다.** 시스템은 **RDB + 소스코드**이며, 웹 GUI 구성은
+> 전적으로 그 안에서 처리된다. 온톨로지/LOD 는 시스템이 저장한 시·비평 사실을 **외부에 발행하기
+> 위한 매핑 결과물**일 뿐이다. 흐름은 `RDB→GUI` 와 `RDB→LOD`(`src/Rdf.php`) **병행**이며,
+> GUI 는 LOD 를 거치지 않는다(RDB→LOD→GUI 가 아니다).
 
-- **인용 모델(v0.4 슬림)**: `oa:hasBody`(비평문 속 표지 = `oa:FragmentSelector`(xml:id) 하나) ↔ `oa:hasTarget`(원시 속 위치 = `pac:TextSelection` 연/행 + `oa:TextQuoteSelector`의 `oa:exact`). 대상 2개 이상이면 **비연속 인용**(`pac:targetOrder` 부여). v0.4 에서 body 쪽 `oa:TextQuoteSelector`·`oa:prefix/suffix`·`oa:TextPositionSelector` 폐지.
-- **시 본문(`poem_line`)** 은 좌측 표시·연행 선택을 위한 시스템 내부 데이터이며, TBox 에 '시 전문' 속성이 없으므로 **LOD 트리플로 발행하지 않는다**(온톨로지 비훼손). 시는 선택자로만 LOD 에 나타난다.
+| 시스템(RDB) | 매핑(`src/Rdf.php`) | 발행(LOD) | 비고 |
+|---|---|---|---|
+| `person`(is_poet/is_critic) | 인물 루프 | `pac:Poet`/`pac:Critic`, `foaf:name`, `owl:sameAs`(WD·NL·ISNI) | |
+| `book` | books 루프 | **`bibo:Book` + `pac:PoetryCollection`**, `pac:documentTitle`, `pac:hasAuthor`, `bibo:isbn13`, `owl:sameAs`(NL) | **v0.5 이중타입** |
+| `poem` | poems 루프 | `pac:Poem`, `pac:documentTitle`, `pac:hasAuthor`, `dct:isPartOf` | |
+| `poem_line` · `poem.body_xml` | **(비발행)** | — | **시 본문 LOD 비발행(불변식).** 연/행 좌표만 `pac:TextSelection` 으로 |
+| `article` | articles 루프 | **`bibo:Article` + `pac:CriticalEssay`**, `pac:fullText`(rdf:HTML), `dct:created`, `cito:critiques` | **v0.5 이중타입** · `fullText` 의 `<q xml:id>` 는 **내부 앵커** |
+| `quotation` | `buildQuotation` | `pac:Quotation`(⊑`oa:Annotation`), `oa:hasBody`→`FragmentSelector`(xml:id), `pac:quotationType` | xml:id = 내부 앵커 |
+| `quotation_target` | targets 루프 | `oa:hasTarget`→`oa:SpecificResource`, `pac:TextSelection`(연/행), `oa:exact`, `pac:targetOrder` | `exact`=자기완결 인용 발췌(의도적 lossy) |
+
+- **이중타입 발행(v0.5)**: 시집은 `a bibo:Book, pac:PoetryCollection`, 비평문은 `a bibo:Article, pac:CriticalEssay` 로 발행된다. `bibo:Book`/`bibo:Article` 라벨에 '시집'/'비평문' 의미를 부가하지 않아 **외부 어휘를 비훼손**하면서도, 추론기 없는 소비자의 `?x a bibo:Book` 질의가 그대로 동작한다(상호운용 보존).
+- **인용 모델(v0.4 슬림 · v0.5 유지)**: `oa:hasBody`(비평문 속 표지 = `oa:FragmentSelector`(xml:id) 하나) ↔ `oa:hasTarget`(원시 속 위치 = `pac:TextSelection` 연/행 + `oa:TextQuoteSelector`의 `oa:exact`). 대상 2개 이상이면 **비연속 인용**(`pac:targetOrder` 부여). v0.4 에서 body 쪽 `oa:TextQuoteSelector`·`oa:prefix/suffix`·`oa:TextPositionSelector` 폐지.
+- **내부 직렬화 앵커(v0.5 명문화)**: `pac:fullText` 의 rdf:HTML 과 그 안의 `<q xml:id>`, `oa:FragmentSelector` 의 `rdf:value` 는 발행 시점 RDB→HTML 직렬화에서 생긴 **내부 표시 앵커**이며 정규 발행 사실이 아니다. 인용의 의미는 `pac:quotationType`·`pac:TextSelection`·`oa:exact`·`cito:critiques` 로 자기완결적으로 표현된다.
+- **시 본문(`poem_line`/`body_xml`)** 은 좌측 표시·연행 선택을 위한 시스템 내부 데이터이며, TBox 에 '시 전문' 속성이 없으므로 **LOD 트리플로 발행하지 않는다**(온톨로지 비훼손). 시는 선택자(연/행 좌표)로만 LOD 에 나타난다.
 - `pac:quotedFrom`(속성 체인)·`dct:creator`/`dct:title`(하위속성 함의) 등 **도출 트리플은 발행하지 않는다** — OWL 추론기의 몫.
+- **인용 유형(v0.5)**: `pac:QuotationType` 은 `owl:oneOf {pac:DirectQuotation, pac:IndirectQuotation}` 로 정의된 닫힌 통제어휘다(빈 클래스 → 정직화). 발행 그래프의 IRI 는 그대로라 SHACL `sh:in` 도 무변경.
 
 ## 검증 (선택)
 
@@ -113,7 +122,7 @@ pyshacl -s vocab/pac-shapes.ttl -e vocab/pac-ontology.owl -i rdfs -df turtle dis
 #   → Conforms: True
 ```
 
-현재 샘플 기준: ABox **110 트리플**(v0.3 130 → OA 슬림화로 감소), 4형식(NT/TTL/RDF·XML/JSON-LD) 동형, v0.4 SHACL **Conforms: True**.
+현재 샘플 기준: ABox 4형식(NT/TTL/RDF·XML/JSON-LD) 동형, v0.5 SHACL **Conforms: True**. v0.5 는 시집·비평문에 응용 하위타입(`pac:PoetryCollection`/`pac:CriticalEssay`)을 1개씩 더해 발행한다(이중타입; 행수는 +시집수 +비평문수).
 
 ## 설계 결정
 
@@ -146,4 +155,4 @@ pyshacl -s vocab/pac-shapes.ttl -e vocab/pac-ontology.owl -i rdfs -df turtle dis
 
 ---
 
-기반 온톨로지: PAC v0.4 — `../v0.4/` (이전: v0.1~v0.3). 라이선스: 교육용.
+기반 온톨로지: PAC v0.5 — 버전별 스냅샷은 `../_ontology_legacy/`(v0.1~v0.4). 라이선스: 교육용.

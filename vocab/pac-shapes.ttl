@@ -1,5 +1,9 @@
-# PAC SHACL Shapes — v0.4.0
+# PAC SHACL Shapes — v0.5.0
 # =========================
+# v0.5: targetClass 무변경 — 인스턴스가 이중타입(bibo:Book + pac:PoetryCollection,
+#       bibo:Article + pac:CriticalEssay)이라 BookShape/ArticleShape 가 여전히 타깃된다.
+#       QuotationShape 의 sh:in(DirectQuotation/IndirectQuotation)도 IRI 동일이라 무변경.
+#       (TBox 의 owl:oneOf 정직화·라벨 중립화·하위클래스는 발행 그래프 형태를 바꾸지 않는다.)
 # v0.4: oa:prefix/oa:suffix 제약 제거(속성 폐지). body 는 FragmentSelector 만 요구(기존과 동일).
 #
 # pac-ontology.owl(TBox) + pac-sample.owl(ABox) 의 데이터 무결성을 검증한다.
@@ -88,6 +92,8 @@ pac:ArticleShape a sh:NodeShape ;
         sh:path pac:hasQuotation ; sh:minCount 1 ; sh:class pac:Quotation ;
         sh:message "비평문은 인용을 하나 이상 포함한다." ] ;
     # --- 본문 <q xml:id> 와 인용 앵커의 정합성(SPARQL 제약) ---
+    # 참고(v0.5): pac:fullText 의 rdf:HTML 직렬화에 의존하는 검사다. <q xml:id> 는 내부 표시
+    #   앵커(정규 발행 사실 아님)이므로 이 정합은 편의 검사이지 발행 무결성의 필수 조건은 아니다.
     # 주의: rdf:HTML 리터럴은 처리계(html5)에 따라 직렬화가 달라진다.
     #   원본 xml:id="1"  →  rdflib 정규화 시 xml:id=1 (따옴표 제거) 또는 id="1"(접두사 제거) 등.
     #   정규식 id="?N["> ] 로 따옴표·접두사 유무를 모두 흡수하고, 뒤 경계로 부분숫자 오탐을 막는다.
