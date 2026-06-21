@@ -269,3 +269,27 @@ fieldset.idset{border:1px solid var(--line); border-radius:8px; padding:.8rem; d
 .fill-note{font-size:.85rem; padding:.5rem .7rem; border-radius:8px; margin:.2rem 0 .8rem}
 .fill-note.ok{background:#e7f6ec; border:1px solid #c9e9d4}
 .fill-note.danger{background:#fde9e7; border:1px solid #f5cfca; color:var(--red)}
+
+/* ===== v0.7 — 추론 질의 '거울과 나침반' ===== */
+/* 그룹 머리글 + 상단 한눈 요약 */
+.grouphead{font-size:.95rem; color:var(--ink-soft); margin:1.8rem 0 .7rem; padding-bottom:.3rem;
+  border-bottom:2px solid var(--accent-soft); letter-spacing:.01em}
+.grouphead small{color:var(--muted); font-weight:400}
+.statline{display:flex; flex-wrap:wrap; gap:1.2rem; margin-top:.9rem; font-size:.95rem}
+.statline b{font-size:1.15rem; color:var(--accent)}
+/* 분포 막대(거울 M1·M3·M4) — 유니코드 막대를 색만 입혀 재사용 */
+.distbox{display:flex; flex-direction:column; gap:.3rem; margin:.4rem 0}
+.distrow{display:flex; align-items:center; gap:.6rem; font-size:.9rem}
+.distrow .k{flex:0 0 9rem; color:var(--ink-soft)}
+.distrow .v{font-variant-numeric:tabular-nums; font-weight:600}
+.ibar{color:var(--accent); letter-spacing:-1px; line-height:1}
+.distrow .muted .ibar,.muted>.ibar{color:var(--muted)}
+.cols2{display:grid; grid-template-columns:1fr 1fr; gap:1.2rem}
+@media (max-width:760px){ .cols2{grid-template-columns:1fr} .distrow .k{flex-basis:7rem} }
+/* M2 얕은 비평 강조(선택 1개) */
+table.grid tr.thin td{color:var(--muted)}
+table.grid tr.thin td a{color:var(--accent); opacity:.85}
+.small{font-size:.8rem}
+.thin-legend{color:var(--muted)}
+/* C2 gap 배지 */
+.chip.rec .score{background:var(--amber); font-size:.68rem; min-width:auto; padding:0 .45em}

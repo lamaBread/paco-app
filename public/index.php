@@ -19,6 +19,7 @@ require __DIR__ . '/../src/Repo.php';
 require __DIR__ . '/../src/Rdf.php';
 require __DIR__ . '/../src/Wikidata.php';
 require __DIR__ . '/../src/NlLod.php';
+require __DIR__ . '/../src/Insights.php';
 require __DIR__ . '/../src/Updater.php';
 require __DIR__ . '/../src/render.php';
 require __DIR__ . '/../src/pages_common.php';
@@ -157,16 +158,15 @@ try {
             redirect('articles/edit', ['id' => $req['article_id'] ?? ''], '인용을 삭제했습니다.');
 
         case 'insights/refresh':
-            // 기본 출처(국가서지LOD) 먼저 — 갱신하며 NL 의 owl:sameAs 로 Wikidata 도 자동 연결.
+            // 국가서지LOD 프로파일 갱신(편식 지도 M4 의 입력) — 갱신하며 NL 의 owl:sameAs 로
+            // Wikidata 도 자동 연결한다. 이어서 C2(다음 시인) 후보 풀을 같은 분야로 프리페치.
             $nl  = new NlLod($repo, $cfg);
             $nls = $nl->refreshAll();
-            // 폴백/보강 출처(Wikidata) — NL 단계가 채운 same_as 까지 반영해 질의.
-            $wd  = new Wikidata($repo, $cfg);
-            $sum = $wd->refreshAll();
-            $msg = "국가서지LOD: 시인 {$nls['poets']}명 · 사실 {$nls['facts']}건"
+            $cnd = $nl->fetchCandidates();
+            $msg = "국가서지LOD: 시인 {$nls['poets']}명 · 프로파일 사실 {$nls['facts']}건"
                 . ($nls['linked'] ? " · Wikidata 자동연결 {$nls['linked']}명" : '')
-                . ". / Wikidata: 시인 {$sum['poets']}명 · 사실 {$sum['facts']}건 · 비슷한 시인 {$sum['similar']}건.";
-            $errs = array_merge($nls['errors'] ?? [], $sum['errors'] ?? []);
+                . " · 다음 시인 후보 {$cnd['candidates']}명({$cnd['fields']}개 분야).";
+            $errs = $nls['errors'] ?? [];
             if ($errs) $msg .= ' (오류: ' . implode(' / ', array_slice($errs, 0, 3)) . ')';
             redirect('insights', [], $msg);
 

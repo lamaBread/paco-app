@@ -36,7 +36,7 @@ use PDO;
 final class Database
 {
     /** 현재 코드가 기대하는 스키마 단계. 스키마를 바꾸면 +1 하고 migrations() 에 단계 추가. */
-    public const SCHEMA_VERSION = 4;
+    public const SCHEMA_VERSION = 5;
 
     private static ?PDO $pdo = null;
 
@@ -350,6 +350,25 @@ SQL);
             4 => static function (PDO $pdo): void {
                 self::addColumn($pdo, 'book', 'nl_uri',   'TEXT'); // owl:sameAs (국가서지LOD 시집 자원)
                 self::addColumn($pdo, 'poem', 'body_xml', 'TEXT'); // 시 마크업 XML(정식 소스)
+            },
+
+            // ── 5 (v0.7.0): 추론 질의 '나침반' C2(근거 있는 다음 시인) 후보 풀 캐시. ──
+            // 내가 비평한 시인의 '활동분야'를 국가서지LOD 에서 다시 검색해, 같은 분야의
+            // 다른 시인을 후보로 프리페치한다(NlLod::fetchCandidates). 표시용 캐시일 뿐
+            // 발행 LOD 와 무관하며, 비면 추천이 빈 채로만 나온다(데이터 무손실·추가형).
+            5 => static function (PDO $pdo): void {
+                $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS nl_candidate (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    nl_uri      TEXT NOT NULL,              -- 국가서지LOD 저자 자원 URI(후보 식별자)
+    name        TEXT,                        -- 시인 이름(foaf:name)
+    birth_year  INTEGER,                     -- 출생년(세대 계산용, 없으면 NULL)
+    field       TEXT,                        -- 후보를 끌어온 활동분야(검색 키·사유 표기)
+    fetched_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_nlcand_uri  ON nl_candidate(nl_uri);
+CREATE INDEX        IF NOT EXISTS ix_nlcand_field ON nl_candidate(field);
+SQL);
             },
         ];
     }

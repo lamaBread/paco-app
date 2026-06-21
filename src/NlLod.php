@@ -277,6 +277,134 @@ final class NlLod
         return $v ?: null;
     }
 
+    // ============================== 추론 질의 C2 후보 풀(근거 있는 다음 시인)
+    /**
+     * 활동분야로 국가서지LOD 저자(시인)를 검색한다 — C2 추천 후보 풀.
+     * 이름·시집 검색과 같은 '변수 주어 + 정확 일치' 형태(엔진에서 검증됨)를 먼저 쓰고,
+     * 통제어휘 표기차(괄호 한자 등)로 비면 부분일치(CONTAINS)로 한 번 더 시도한다.
+     * @return array<int,array{uri:string,name:string}>  직업에 '시인' 이 포함된 후보만
+     */
+    public function searchPoetsByField(string $field, int $limit = 60): array
+    {
+        $field = self::cleanTerm($field);
+        if ($field === '') return [];
+        $lit = self::sparqlStr($field);
+        $head = <<<SPARQL
+        PREFIX rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX foaf:   <http://xmlns.com/foaf/0.1/>
+        PREFIX nlon:   <http://lod.nl.go.kr/ontology/>
+        PREFIX schema: <http://schema.org/>
+        SPARQL;
+        $qExact = $head . <<<SPARQL
+
+        SELECT ?s ?name ?job WHERE {
+          ?s rdf:type nlon:Author ; foaf:name ?name ;
+             nlon:fieldOfActivity "$lit" ; schema:jobTitle ?job .
+        } LIMIT $limit
+        SPARQL;
+        $rows = $this->sparql($qExact);
+        if (!$rows) {
+            $qContains = $head . <<<SPARQL
+
+            SELECT ?s ?name ?job WHERE {
+              ?s rdf:type nlon:Author ; foaf:name ?name ;
+                 nlon:fieldOfActivity ?f ; schema:jobTitle ?job .
+              FILTER(CONTAINS(STR(?f), "$lit"))
+            } LIMIT $limit
+            SPARQL;
+            $rows = $this->sparql($qContains);
+        }
+        $cands = [];
+        foreach ($rows as $r) {
+            $uri = $r['s']['value'] ?? '';
+            $id  = self::resourceId($uri);
+            if (!$id) continue;
+            $name = self::cleanTerm($r['name']['value'] ?? '');
+            $job  = self::cleanTerm($r['job']['value'] ?? '');
+            if (!isset($cands[$id])) $cands[$id] = ['uri' => $uri, 'name' => $name, 'is_poet' => false];
+            if ($name !== '' && $cands[$id]['name'] === '') $cands[$id]['name'] = $name;
+            if (mb_strpos($job, '시인') !== false) $cands[$id]['is_poet'] = true;
+        }
+        $out = [];
+        foreach ($cands as $c) {
+            if ($c['is_poet'] && $c['name'] !== '') $out[] = ['uri' => $c['uri'], 'name' => $c['name']];
+        }
+        return $out;
+    }
+
+    /**
+     * C2 후보 풀(nl_candidate)을 갱신한다. 내가 비평한 시인들의 활동분야를 모아 같은 분야의
+     * 다른 시인을 국가서지LOD 에서 검색하고, 내가 이미 등록한 시인은 빼고 저장한다. 출생년은
+     * 비용 제한(상위 $maxProfiles 명)으로 프로파일에서 보강한다(없으면 NULL — 추천은 가능).
+     * @return array{fields:int,candidates:int,profiled:int}
+     */
+    public function fetchCandidates(int $perField = 60, int $maxProfiles = 40): array
+    {
+        $db = $this->repo->pdo();
+        $sum = ['fields' => 0, 'candidates' => 0, 'profiled' => 0];
+
+        // nl_candidate 테이블이 없으면(구버전 DB) 조용히 종료.
+        try {
+            $db->query('SELECT 1 FROM nl_candidate LIMIT 1');
+        } catch (\Throwable $e) {
+            return $sum;
+        }
+
+        // ① 내가 비평한 시인들의 활동분야.
+        $poets = $this->repo->critiquedPoets();
+        if (!$poets) return $sum;
+        $ids = array_column($poets, 'id');
+        $place = implode(',', array_fill(0, count($ids), '?'));
+        $fst = $db->prepare(
+            "SELECT DISTINCT value_label FROM nl_fact
+             WHERE prop_label='활동분야' AND value_label IS NOT NULL AND person_id IN ($place)"
+        );
+        $fst->execute($ids);
+        $fields = [];
+        foreach ($fst->fetchAll() as $r) {
+            $f = trim((string) $r['value_label']);
+            if ($f !== '') $fields[$f] = true;
+        }
+        $fields = array_keys($fields);
+        $sum['fields'] = count($fields);
+        if (!$fields) return $sum;
+
+        // 내가 이미 등록한 시인 이름(후보에서 즉시 제외).
+        $mine = [];
+        foreach ($this->repo->poets() as $p) $mine[$p['name']] = true;
+
+        // ② 분야별 검색 → uri 기준 합치기(처음 매칭된 분야를 사유로 기록).
+        $candidates = [];
+        foreach ($fields as $field) {
+            foreach ($this->searchPoetsByField($field, $perField) as $c) {
+                if (isset($mine[$c['name']]) || isset($candidates[$c['uri']])) continue;
+                $candidates[$c['uri']] = ['name' => $c['name'], 'field' => $field];
+            }
+        }
+
+        // ③ 캐시 재구성(전량 교체). 검색 결과가 비면 비운 채로 둔다.
+        $db->prepare('DELETE FROM nl_candidate')->execute();
+        if (!$candidates) return $sum;
+        $ins = $db->prepare(
+            'INSERT OR IGNORE INTO nl_candidate (nl_uri,name,birth_year,field,fetched_at)
+             VALUES (?,?,?,?,?)'
+        );
+        $now = date('c');
+        foreach ($candidates as $uri => $c) {
+            $by = null;
+            if ($sum['profiled'] < $maxProfiles) {
+                $prof = $this->fetchProfile($uri);
+                $sum['profiled']++;
+                if ($prof && $prof['birth'] && preg_match('/(\d{4})/', (string) $prof['birth'], $m)) {
+                    $by = (int) $m[1];
+                }
+            }
+            $ins->execute([$uri, $c['name'], $by, $c['field'], $now]);
+            $sum['candidates']++;
+        }
+        return $sum;
+    }
+
     // ===================================================== 시집(국가서지LOD Book)
     /** 국가서지LOD 시집 자원 URI → id(KMO…·CNTS-…·WMO… 등, 하이픈 포함). */
     public static function bookResourceId(?string $uri): ?string
