@@ -120,7 +120,7 @@ function page_insights(Repo $repo, array $cfg): array
     $bm = $ins->biasMap();
     $m4dec = '';
     if ($bm['decades']) {
-        $maxD = max(1, ...array_map('count', $bm['decades']));
+        $maxD = max(1, ...array_values(array_map('count', $bm['decades'])));
         foreach ($bm['decades'] as $label => $poets) {
             $m4dec .= '<div class="distrow"><span class="k">' . h($label) . '생</span>' . $bar(count($poets), $maxD)
                 . '<span class="v">' . count($poets) . ' <span class="muted">' . h(implode(', ', $poets)) . '</span></span></div>';
