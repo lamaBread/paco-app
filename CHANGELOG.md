@@ -11,6 +11,23 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (없음)
 
+## [0.9.1] — 2026-06-22
+> **SHACL 보정 — '인용 0건 비평문' 검증 오류 수정.** v0.9 언급(`cito:mentions`)으로 인용 없이
+> *호명만* 하는 비평문이 1급 사례가 됐는데, `ArticleShape` 가 여전히 `pac:hasQuotation` 1건 이상을
+> **Violation** 으로 요구해 그런 비평문이 SHACL 위반으로 잡혔다. 설계 결정(인용 0건 비평문 적법)과
+> 어긋난 검증 규칙을 바로잡는다.
+
+### Fixed
+- **`ArticleShape` `pac:hasQuotation` minCount 1 → 권장(`sh:Warning`).** 인용 0건 비평문(예: 인용
+  없이 `cito:mentions` 만 있는 비평문)이 SHACL `Conforms: False` 로 잡히던 것을 해소한다. 값 타입
+  검사(`sh:class pac:Quotation`)는 Violation 으로 유지 — 인용이 *있으면* 인용 노드여야 한다.
+  (`vocab/pac-shapes.ttl`)
+
+### 데이터 마이그레이션
+- **없음.** SHACL(검증 규칙)만 바뀌고 RDB 스키마(`SCHEMA_VERSION` 6)·발행 트리플·TBox
+  (`pac-ontology.owl` `owl:versionInfo` 0.7.0)·`config.ont_version`(0.7.0)은 무변경. 기존 발행
+  그래프는 모두 그대로 유효하며, 검증 결과만 위반→경고로 바뀐다.
+
 ## [0.9.0] — 2026-06-22
 > **언급(cito:mentions) — 인용과 나란한 새 관계 축.** 비평문이 인용(직접·간접)하지 않고 이름으로
 > *지칭*만 한 시인·시·시집을 기록한다. 직접/간접 인용의 '세 번째 값'이 아니라 표준 cito: 어휘의

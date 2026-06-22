@@ -1,5 +1,9 @@
-# PAC SHACL Shapes — v0.7.0
+# PAC SHACL Shapes — v0.7.0  (앱 v0.9.1 검증 보정 반영)
 # =========================
+# v0.9.1: ArticleShape 의 pac:hasQuotation '1건 이상' 제약을 Violation→Warning(권장)으로 완화.
+#       인용 0건 비평문은 설계상 적법(인용 주석만 비고 cito:critiques 는 발행)이고, v0.9 언급
+#       (cito:mentions)으로 '인용 없이 호명만 하는 비평문'이 1급 사례가 됐다 — 그런 비평문이
+#       SHACL 위반으로 잡히던 것을 바로잡는다. 값 타입(pac:Quotation) 검사는 Violation 유지.
 # v0.7: 언급(cito:mentions) 추가에 맞춰 ArticleShape 에 cito:mentions 제약(IRI·선택·Info)만 더한다.
 #       인용(QuotationShape)·직접/간접 통제어휘는 무변경 — 언급은 인용과 별개 관계라 시 본문
 #       위치(oa:hasTarget) 제약을 받지 않는다. 대상은 이미 발행되는 시인/시/시집 노드의 IRI 다.
@@ -93,9 +97,15 @@ pac:ArticleShape a sh:NodeShape ;
         sh:message "작성일은 xsd:date 한 개여야 한다." ] ;
     # v0.6: pac:fullText 비발행 — 본문 전문 제약과 fullText↔앵커 정합 SPARQL 검사 2건을 제거.
     #   (비평문↔인용 연결은 아래 pac:hasQuotation 으로 유지된다.)
+    # v0.9.1: 인용 0건 비평문도 적법(설계 결정)하며, v0.9 언급(cito:mentions)으로 인용 없이
+    #   호명만 하는 비평문이 1급 사례가 되었다 → '인용 1건 이상'은 Violation 이 아니라 권장(Warning).
+    #   값 타입(pac:Quotation) 검사는 Violation 으로 유지한다(있으면 인용이어야 함).
     sh:property [
-        sh:path pac:hasQuotation ; sh:minCount 1 ; sh:class pac:Quotation ;
-        sh:message "비평문은 인용을 하나 이상 포함한다." ] ;
+        sh:path pac:hasQuotation ; sh:minCount 1 ; sh:severity sh:Warning ;
+        sh:message "비평문엔 인용(pac:hasQuotation)이 하나 이상 권장된다(언급만 하는 비평문도 적법)." ] ;
+    sh:property [
+        sh:path pac:hasQuotation ; sh:class pac:Quotation ;
+        sh:message "pac:hasQuotation 의 값은 인용(pac:Quotation)이어야 한다." ] ;
     # v0.9(ont v0.7): 언급(cito:mentions) — 인용·비평대상과 구별되는 '지칭'. 선택이며 대상은 IRI.
     #   시 본문 위치를 동반하지 않으므로 oa:hasTarget 류 제약을 받지 않는다(별개 관계).
     sh:property [
