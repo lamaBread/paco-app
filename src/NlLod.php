@@ -237,7 +237,8 @@ final class NlLod
      */
     public function refreshAll(): array
     {
-        $sum = ['poets' => 0, 'facts' => 0, 'linked' => 0, 'skipped' => 0, 'errors' => []];
+        $sum = ['poets' => 0, 'facts' => 0, 'linked' => 0, 'resolved' => 0, 'candidates' => 0, 'skipped' => 0, 'errors' => []];
+        $wd = new Wikidata($this->repo, $this->cfg);
         $setWd = $this->repo->pdo()->prepare('UPDATE person SET same_as=? WHERE id=? AND (same_as IS NULL OR same_as="")');
         foreach ($this->repo->poets() as $poet) {
             if (empty($poet['nl_uri'])) { $sum['skipped']++; continue; }
@@ -245,15 +246,54 @@ final class NlLod
             try {
                 $r = $this->fetchFacts($poet['id'], $poet['nl_uri']);
                 $sum['facts'] += $r['facts'];
-                if ($r['wikidata'] && empty($poet['same_as'])) {
-                    $setWd->execute([$r['wikidata'], $poet['id']]);
-                    if ($setWd->rowCount() > 0) $sum['linked']++;
+                if (empty($poet['same_as'])) {
+                    // ① 국가서지LOD 가 직접 준 Wikidata owl:sameAs
+                    $wdUri = $r['wikidata'];
+                    $resolved = false;
+                    // ② 없으면 ISNI/VIAF 로 Wikidata 동일인 능동 해석(정확 일치 → 자동 연결)
+                    if (!$wdUri && $r['profile']) {
+                        $qid = $wd->resolveQid($r['profile']['isni'] ?? null, $r['profile']['viaf'] ?? null);
+                        if ($qid) { $wdUri = 'http://www.wikidata.org/entity/' . $qid; $resolved = true; }
+                    }
+                    if ($wdUri) {
+                        $setWd->execute([$wdUri, $poet['id']]);
+                        if ($setWd->rowCount() > 0) $sum[$resolved ? 'resolved' : 'linked']++;
+                    } elseif ($r['profile']) {
+                        // ③ 식별자로 못 찾으면 이름+생년 후보만 적재(자동 확정 금지 — 사용자 확인용)
+                        $sum['candidates'] += $this->storeWikidataCandidates($poet['id'], $r['profile'], $wd);
+                    }
                 }
             } catch (\Throwable $e) {
                 $sum['errors'][] = $poet['name'] . ': ' . $e->getMessage();
             }
         }
         return $sum;
+    }
+
+    /**
+     * 이름+생년으로 찾은 Wikidata 동일인 후보(자동 연결 안 함)를 nl_fact 에 'Wikidata 후보' 로
+     * 적재한다 — 인물 상세에서 링크로 보이고, 맞으면 사용자가 편집 폼에서 직접 연결한다.
+     * fetchFacts 가 직전에 이 사람의 nl_fact 를 비우고 다시 채우므로, 그 뒤에 호출돼 멱등하다.
+     */
+    private function storeWikidataCandidates(string $personId, array $prof, Wikidata $wd): int
+    {
+        $name = trim((string) ($prof['name'] ?? ''));
+        if ($name === '') return 0;
+        $birth = ($prof['birth'] ?? '') !== '' ? (int) $prof['birth'] : null;
+        $cands = $wd->resolveCandidatesByName($name, $birth);
+        if (!$cands) return 0;
+        $ins = $this->repo->pdo()->prepare(
+            'INSERT INTO nl_fact (person_id,prop_uri,prop_label,value_iri,value_label,fetched_at)
+             VALUES (?,?,?,?,?,?)'
+        );
+        $now = date('c');
+        $n = 0;
+        foreach (array_slice($cands, 0, 3) as $c) {
+            $label = $c['label'] . ($c['birth'] ? ' · ' . $c['birth'] . '년생' : '');
+            $ins->execute([$personId, 'http://www.wikidata.org/prop/direct/P213', 'Wikidata 후보(확인 필요)', $c['uri'], $label, $now]);
+            $n++;
+        }
+        return $n;
     }
 
     // ----------------------------------------------------------- 표시용 조회

@@ -122,6 +122,76 @@ final class Wikidata
         return $n;
     }
 
+    // ============================== 국가서지LOD → Wikidata 동일인 능동 해석 (v0.8)
+    /**
+     * 국가서지LOD 프로파일의 외부 식별자(ISNI·VIAF)로 Wikidata 동일인 QID 를 역질의한다.
+     * 외부 식별자는 정확 일치 → 신뢰(자동 연결 가능). 정확히 1개만 매칭될 때만 돌려준다
+     * (한 식별자가 여러 엔티티에 붙은 모호성은 배제). 못 찾으면 null.
+     */
+    public function resolveQid(?string $isni, ?string $viaf): ?string
+    {
+        // ① ISNI(P213) — Wikidata 는 16자리를 4자리씩 공백으로 끊어 저장한다.
+        $isni16 = NlLod::normalizeIsni($isni);
+        if ($isni16 !== null) {
+            $spaced = trim(chunk_split($isni16, 4, ' '));
+            $qid = $this->resolveByExternalId('P213', $spaced) ?? $this->resolveByExternalId('P213', $isni16);
+            if ($qid) return $qid;
+        }
+        // ② VIAF(P214) — 숫자 id.
+        if ($viaf !== null && preg_match('/(\d{3,})/', $viaf, $m)) {
+            $qid = $this->resolveByExternalId('P214', $m[1]);
+            if ($qid) return $qid;
+        }
+        return null;
+    }
+
+    /** wdt:$pid 값이 정확히 $value 인 엔티티가 유일하면 그 QID, 아니면 null. */
+    private function resolveByExternalId(string $pid, string $value): ?string
+    {
+        // 값은 ISNI(숫자·공백·X) / VIAF(숫자)뿐 — 따옴표 이스케이프만 방어적으로.
+        $v = str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
+        $rows = $this->sparql("SELECT ?p WHERE { ?p wdt:$pid \"$v\" } LIMIT 2");
+        if (count($rows) === 1) return self::qid($rows[0]['p']['value'] ?? null);
+        return null;
+    }
+
+    /**
+     * 이름(+생년)으로 Wikidata 시인/작가 후보를 찾는다 — 자동 확정 금지, 사용자 확인용.
+     * 동명이인 위험이 있어 연결하지 않고 후보만 돌려준다. 생년이 주어지면 ±1 일치를 앞세운다.
+     * @return array<int,array{qid:string,uri:string,label:string,birth:?int}>
+     */
+    public function resolveCandidatesByName(string $name, ?int $birth = null): array
+    {
+        $name = trim($name);
+        if ($name === '') return [];
+        $lang = $this->cfg['wikidata']['lang'];
+        $esc = str_replace(['\\', '"'], ['\\\\', '\\"'], $name);
+        // 직업이 시인(Q49757)·작가(Q36180)·저술가(Q482980) 계열인 인물만.
+        $q = <<<SPARQL
+        SELECT DISTINCT ?p ?pLabel ?by WHERE {
+          ?p rdfs:label|skos:altLabel "$esc"@$lang .
+          ?p wdt:P106 ?occ . VALUES ?occ { wd:Q49757 wd:Q36180 wd:Q482980 }
+          OPTIONAL { ?p wdt:P569 ?dob . BIND(YEAR(?dob) AS ?by) }
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "$lang,en". ?p rdfs:label ?pLabel. }
+        } LIMIT 10
+        SPARQL;
+        $out = [];
+        foreach ($this->sparql($q) as $r) {
+            $qid = self::qid($r['p']['value'] ?? null);
+            if (!$qid || isset($out[$qid])) continue;
+            $by = isset($r['by']['value']) && $r['by']['value'] !== '' ? (int) $r['by']['value'] : null;
+            $out[$qid] = [
+                'qid' => $qid, 'uri' => 'http://www.wikidata.org/entity/' . $qid,
+                'label' => $r['pLabel']['value'] ?? $name, 'birth' => $by,
+            ];
+        }
+        $out = array_values($out);
+        if ($birth !== null) {
+            usort($out, fn($a, $b) => (abs(($a['birth'] ?? 9999) - $birth)) <=> (abs(($b['birth'] ?? 9999) - $birth)));
+        }
+        return $out;
+    }
+
     /** @return array<int,array> SPARQL JSON bindings */
     private function sparql(string $query): array
     {

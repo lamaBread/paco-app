@@ -190,13 +190,35 @@ final class Insights
         $db = $this->pdo();
         $poets = $this->repo->critiquedPoets();
         $factSt = $db->prepare('SELECT prop_label, value_label FROM nl_fact WHERE person_id=?');
+        // 사조(P135)·장르(P136)는 국가서지LOD 에 없어 Wikidata 보강 캐시에서 읽는다(v0.8).
+        $wdSt = null;
+        try {
+            $wdSt = $db->prepare("SELECT prop_pid, value_label FROM wikidata_fact WHERE person_id=? AND prop_pid IN ('P135','P136')");
+        } catch (\Throwable $e) { /* 구버전 DB: 캐시 테이블 없음 → 사조/장르 축 생략 */ }
 
         $decades = [];      // '1980년대' => [이름…]
         $fields = [];       // '한국 시' => 시인 수
+        $movements = [];    // '모더니즘' => 시인 수 (Wikidata P135)
+        $genres = [];       // '서정시' => 시인 수 (Wikidata P136)
         $noProfile = [];
         $coveredDecades = [];
 
         foreach ($poets as $p) {
+            // 사조(P135)·장르(P136)는 국가서지LOD 프로파일과 독립적인 Wikidata 보강이다.
+            // nl_fact 가 없어 아래에서 continue 하더라도 이 축은 잡혀야 하므로 먼저 읽는다.
+            if ($wdSt) {
+                $wdSt->execute([$p['id']]);
+                $seenMv = $seenGn = [];
+                foreach ($wdSt->fetchAll() as $f) {
+                    $val = trim((string) $f['value_label']);
+                    if ($val === '') continue;
+                    if ($f['prop_pid'] === 'P135' && !isset($seenMv[$val])) {
+                        $seenMv[$val] = true; $movements[$val] = ($movements[$val] ?? 0) + 1;
+                    } elseif ($f['prop_pid'] === 'P136' && !isset($seenGn[$val])) {
+                        $seenGn[$val] = true; $genres[$val] = ($genres[$val] ?? 0) + 1;
+                    }
+                }
+            }
             $factSt->execute([$p['id']]);
             $rows = $factSt->fetchAll();
             if (!$rows) { $noProfile[] = $p['name']; continue; }
@@ -220,11 +242,16 @@ final class Insights
         }
         ksort($decades);
         arsort($fields);
+        arsort($movements);
+        arsort($genres);
         return [
             'decades' => $decades,
             'fields' => $fields,
+            'movements' => $movements,
+            'genres' => $genres,
             'noProfile' => $noProfile,
             'coveredFields' => array_keys($fields),
+            'coveredMovements' => array_keys($movements),
             'coveredDecades' => array_map('intval', array_keys($coveredDecades)),
         ];
     }
@@ -309,6 +336,50 @@ final class Insights
                 ?: strcmp($a['name'], $b['name']);
         });
         return array_slice($out, 0, $limit);
+    }
+
+    // ====================================================== C3 사조·계보로 잇는 다음 시인
+    /**
+     * 내가 비평한 시인과 문예사조·특정 직업을 공유하지만 아직 내 컬렉션에 없는 Wikidata 시인.
+     * 7.0 에서 폐기됐던 '비슷한 시인'을, 무의미한 일반 직업(시인·작가 등)을 걸러 사조/계보 중심으로
+     * 되살린 것. wikidata_similar 프리페치 캐시 기반(여러 시인과 겹칠수록 위로). 캐시가 없으면 빈 배열.
+     * @return array<int,array{uri:string,name:string,vias:array<int,string>,shared_with:int,why:string}>
+     */
+    public function movementRecommendations(int $limit = 24): array
+    {
+        $db = $this->pdo();
+        try {
+            $st = $db->prepare(<<<'SQL'
+                SELECT s.similar_iri AS uri, MAX(s.similar_label) AS name,
+                       COUNT(DISTINCT s.person_id) AS shared_with,
+                       GROUP_CONCAT(DISTINCT s.via_label) AS vias
+                FROM wikidata_similar s
+                WHERE s.similar_label IS NOT NULL AND s.similar_label <> ''
+                  AND s.via_label IS NOT NULL
+                  AND s.via_label NOT IN ('시인','작가','문인','저술가','소설가','poet','writer','author','novelist')
+                  AND s.similar_iri NOT IN (
+                      SELECT same_as FROM person WHERE same_as IS NOT NULL AND same_as <> '')
+                GROUP BY s.similar_iri
+                ORDER BY shared_with DESC, name
+                LIMIT :lim
+            SQL);
+            $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+            $st->execute();
+            $rows = $st->fetchAll();
+        } catch (\Throwable $e) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $vias = array_values(array_filter(array_map('trim', explode(',', (string) $r['vias']))));
+            $why = ($vias ? implode(' · ', array_slice($vias, 0, 3)) . ' 공유' : '사조·계보 공유')
+                . ' · 내가 비평한 시인 ' . (int) $r['shared_with'] . '명과 겹침 · 아직 비평 안 함';
+            $out[] = [
+                'uri' => $r['uri'], 'name' => (string) $r['name'],
+                'vias' => $vias, 'shared_with' => (int) $r['shared_with'], 'why' => $why,
+            ];
+        }
+        return $out;
     }
 
     // ----------------------------------------------------------------- 헬퍼

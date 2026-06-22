@@ -11,6 +11,43 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (없음)
 
+## [0.8.0] — 2026-06-22
+> **추론 질의 고도화 — 문예사조·장르 편식 축, '사조로 잇는 다음 시인'(C3), 그리고
+> 국가서지LOD→Wikidata 동일인 능동 연결.** 휴면 상태였던 Wikidata 보강(P135 사조·P136 장르·
+> 유사 시인)을 프리페치에 되살리고, 국가서지LOD 의 ISNI/VIAF 로 Wikidata 동일인을 자동 검색해 잇는다.
+
+### Added
+- **국가서지LOD→Wikidata 동일인 능동 해석.** 국가서지LOD 레코드가 Wikidata `owl:sameAs` 를
+  직접 주지 않아도(현대 시인의 일반적 공백), 프로파일의 **ISNI(P213)·VIAF(P214)** 로 Wikidata 를
+  역질의해 동일인 QID 를 찾아 `person.same_as` 에 자동 연결한다 — 외부 식별자 **정확·유일 매칭만 자동**.
+  못 찾으면 **이름+생년으로 후보만** 인물 상세에 'Wikidata 후보(확인 필요)' 로 제시하고, 맞으면
+  사용자가 편집 폼에서 직접 연결한다(동명이인 오결합 방지). (`src/Wikidata.php`
+  `resolveQid`·`resolveCandidatesByName`, `src/NlLod.php` `refreshAll`)
+- **M4 편식 지도에 문예사조·장르 축.** 출생 세대·활동분야(국가서지LOD)에 더해
+  **문예사조(Wikidata P135)·장르(P136)** 분포를 함께 비춘다. (`src/Insights.php` `biasMap`,
+  `src/pages_lod.php`)
+- **C3 · 사조·계보로 잇는 다음 시인.** 내가 비평한 시인과 문예사조(P135)·계보를 공유하지만 아직
+  안 다룬 Wikidata 시인을 추천한다(여러 시인과 겹칠수록 위로). v0.7.0 에서 폐기됐던 '비슷한 시인'을,
+  무의미한 일반 직업('시인·작가')을 걸러 사조 중심으로 되살렸다. (`src/Insights.php`
+  `movementRecommendations`, `src/pages_lod.php`)
+
+### Changed
+- **프리페치가 Wikidata 보강을 다시 수행.** v0.7.x 의 프리페치는 국가서지LOD 만 갱신하고 Wikidata
+  캐시(`wikidata_fact`·`wikidata_similar`)는 채우지 않아 사조·장르·유사 시인이 늘 비어 있었다.
+  국가서지LOD 로 `same_as` 를 정한 뒤 `Wikidata::refreshAll()` 을 이어 호출하도록 재배선해 P135/P136/
+  유사 시인이 실제로 쌓이게 했다(순서 중요 — 능동 해석으로 막 이어진 시인도 같은 갱신에 포함). (`src/Prefetch.php`)
+
+### Fixed
+- **편식 지도가 국가서지LOD 프로파일 없는 시인의 사조/장르를 누락하던 문제.** `biasMap()` 이
+  nl_fact(국가서지LOD)가 없는 시인을 일찍 `continue` 로 건너뛰어, **Wikidata 만 있는**(국가서지 미연결/
+  미프리페치) 시인의 P135/P136 이 집계되지 않았다. Wikidata 축을 국가서지 분기보다 **먼저** 읽도록
+  고쳤다 — 캐시(`wikidata_fact`)를 채운 DB 로 직접 렌더해 검출(게이트 사각지대). (`src/Insights.php`)
+
+### 데이터 마이그레이션
+- 없음(`SCHEMA_VERSION`=5 그대로). `wikidata_fact`·`wikidata_similar` 는 v0.4 부터 있던 캐시 테이블이라
+  스키마 변경이 없다. 사조·장르·유사 시인·동일인 연결은 **추론 질의 탭의 *프리페치/갱신*** 을 한 번 돌리면
+  채워진다(기존 사용자도 동일). 인물 상세의 'Wikidata 후보' 행은 프리페치가 `nl_fact` 에 재생성하는 런타임 캐시.
+
 ## [0.7.3] — 2026-06-22
 > **시집의 국가서지LOD 식별자가 GUI 에 안 보이던 문제 수정.** 데이터(`book.nl_uri`)와
 > 발행(`owl:sameAs`)에는 링크가 있는데 화면에서 식별자 문자열이 사라지던 세 경로를 모두 막는다.

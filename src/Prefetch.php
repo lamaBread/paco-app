@@ -119,15 +119,26 @@ final class Prefetch
             $nl = new NlLod($repo, $cfg);
             $log('국가서지LOD 프로파일 갱신(refreshAll)…');
             $nls = $nl->refreshAll();
-            $log("  → 시인 {$nls['poets']}명 · 사실 {$nls['facts']}건 · Wikidata 자동연결 {$nls['linked']}명");
+            $linkedTotal = (int) $nls['linked'] + (int) ($nls['resolved'] ?? 0);
+            $log("  → 시인 {$nls['poets']}명 · 사실 {$nls['facts']}건 · Wikidata 연결 {$nls['linked']}(NL)+"
+                . ($nls['resolved'] ?? 0) . "(ISNI/VIAF)명 · 확인필요 후보 " . ($nls['candidates'] ?? 0) . "건");
+
+            // 국가서지LOD 로 same_as 가 정해진 뒤에 Wikidata 보강(사조 P135·장르 P136·유사 시인)을
+            // 받는다 — 순서 중요(능동 해석으로 막 연결된 시인도 이번 갱신에 포함된다).
+            $log('Wikidata 보강 갱신(사조·장르·유사 시인)…');
+            $wd = new Wikidata($repo, $cfg);
+            $wds = $wd->refreshAll();
+            $log("  → 시인 {$wds['poets']}명 · 사실 {$wds['facts']}건 · 유사 시인 {$wds['similar']}건");
+
             $log('C2 후보 풀 프리페치(fetchCandidates)…');
             $cnd = $nl->fetchCandidates();
             $log("  → 후보 {$cnd['candidates']}명 · {$cnd['fields']}개 분야 · 프로파일 {$cnd['profiled']}건");
 
-            $summary = "국가서지LOD: 시인 {$nls['poets']}명 · 프로파일 사실 {$nls['facts']}건"
-                . ($nls['linked'] ? " · Wikidata 자동연결 {$nls['linked']}명" : '')
+            $summary = "국가서지LOD: 시인 {$nls['poets']}명 · 사실 {$nls['facts']}건"
+                . ($linkedTotal ? " · Wikidata 연결 {$linkedTotal}명" : '')
+                . " · Wikidata 보강(사실 {$wds['facts']}·유사 {$wds['similar']})"
                 . " · 다음 시인 후보 {$cnd['candidates']}명({$cnd['fields']}개 분야)";
-            $errs = $nls['errors'] ?? [];
+            $errs = array_merge($nls['errors'] ?? [], $wds['errors'] ?? []);
             if ($errs) {
                 $summary .= ' · 오류 ' . count($errs) . '건(' . implode(' / ', array_slice($errs, 0, 3)) . ')';
             }

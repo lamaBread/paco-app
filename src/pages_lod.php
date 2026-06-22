@@ -138,6 +138,23 @@ function page_insights(Repo $repo, array $cfg): array
     } else {
         $m4field = '<p class="muted">활동분야 캐시가 없습니다.</p>';
     }
+    // 사조(P135)·장르(P136) — Wikidata 보강 캐시. array_values 로 위치인자화(v0.7.1 max() 함정 회피).
+    $distList = static function (array $items) use ($bar): string {
+        if (!$items) return '';
+        $max = max(1, ...array_values($items));
+        $rows = '';
+        foreach ($items as $label => $cnt) {
+            $rows .= '<div class="distrow"><span class="k">' . h((string) $label) . '</span>' . $bar((int) $cnt, $max)
+                . '<span class="v">' . (int) $cnt . '</span></div>';
+        }
+        return $rows;
+    };
+    $m4move = $bm['movements']
+        ? $distList($bm['movements'])
+        : '<p class="muted">Wikidata 문예사조(P135) 캐시가 없습니다. 시인에 Wikidata 를 연결(ISNI/VIAF 자동·수동)하고 프리페치하세요.</p>';
+    $m4genre = $bm['genres']
+        ? $distList($bm['genres'])
+        : '<p class="muted">Wikidata 장르(P136) 캐시가 없습니다.</p>';
     $m4note = $bm['noProfile']
         ? '<p class="note">국가서지LOD 프로파일이 없는 시인: ' . h(implode(', ', $bm['noProfile']))
             . ' <span class="muted">— 인물 편집에서 국가서지LOD 자원(nl_uri)을 연결하면 편식 지도에 들어옵니다.</span></p>'
@@ -177,6 +194,19 @@ function page_insights(Repo $repo, array $cfg): array
             . '같은 활동분야에서 <b>당신이 비운 세대</b>를 채울 시인이 — 이미 비평한 시인은 빼고 — 사유와 함께 모입니다.</p>';
     } else {
         $c2 = '<div class="chips reclist">' . $c2 . '</div>';
+    }
+
+    // ── C3 사조·계보로 잇는 다음 시인 ─────────────────────────
+    $c3 = '';
+    foreach ($ins->movementRecommendations(24) as $r) {
+        $c3 .= '<a class="chip rec" href="' . h($r['uri']) . '" target="_blank" rel="noopener" title="' . h($r['why']) . '">'
+            . '<b>' . h($r['name']) . '</b><span class="muted"> · ' . h($r['why']) . '</span></a>';
+    }
+    if ($c3 === '') {
+        $c3 = '<p class="muted">아직 사조·계보로 이을 후보가 없습니다. 비평한 시인에 <b>Wikidata</b> 를 연결(ISNI/VIAF 자동 또는 수동)하고 '
+            . '프리페치하면, 같은 <b>문예사조</b>나 계보를 공유하는 — 아직 안 다룬 — 시인이 사유와 함께 모입니다.</p>';
+    } else {
+        $c3 = '<div class="chips reclist">' . $c3 . '</div>';
     }
 
     // ── 툴바 ─────────────────────────────────────────────────
@@ -260,11 +290,23 @@ SELECT ?cand ?name ?by WHERE {
 } LIMIT 24
 # 구현: 분야별 검색 결과를 nl_candidate 에 프리페치하고, 내가 비운 출생 세대를 우선 정렬.
 SPARQL);
+    $qC3 = h(<<<'SPARQL'
+# Wikidata 보강 — 국가서지LOD 엔 없는 '문예사조' 관계로 다음 시인을 잇는다.
+SELECT ?similar ?similarLabel ?sharedLabel WHERE {
+  VALUES ?p { wdt:P135 wdt:P106 }          # 사조/운동 · (특정) 직업
+  wd:$MINE ?p ?shared .                     # 내가 비평한 시인이 가진 값
+  ?similar ?p ?shared ; wdt:P106 wd:Q49757 . # 같은 값을 공유하는 다른 '시인'
+  FILTER(?similar != wd:$MINE)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "ko,en". }
+}
+# 구현: 비평한 시인별 결과를 wikidata_similar 에 프리페치하고, 일반 직업(시인·작가)은 걸러
+#       문예사조/계보 중심으로 — 여러 시인과 겹칠수록 위로 — 정렬한다.
+SPARQL);
 
     $body = <<<HTML
 <section class="hero small">
   <h1>추론 질의 <small>— 비평가의 거울과 나침반</small></h1>
-  <p class="lead">외부 사실을 나열하는 대신, <b>당신의 비평 그래프</b>(비평문·인용·연/행)를 거울로 비추고 <b>국가서지LOD</b> 프로파일로 다음 행동을 가리킵니다. <b>거울</b>은 인용 습관·텍스트 밀착도·위치 편향·시대/분야 편식을 보여주고(네트워크 불필요), <b>나침반</b>은 아직 안 다룬 내 자료와, 내가 비운 세대를 채울 시인을 — 이미 비평한 시인은 빼고 — 사유와 함께 추천합니다.</p>
+  <p class="lead">외부 사실을 나열하는 대신, <b>당신의 비평 그래프</b>(비평문·인용·연/행)를 거울로 비추고 <b>국가서지LOD·Wikidata</b> 프로파일로 다음 행동을 가리킵니다. <b>거울</b>은 인용 습관·텍스트 밀착도·위치 편향과 시대·분야·문예사조·장르 편식을 보여주고(네트워크 불필요), <b>나침반</b>은 아직 안 다룬 내 자료(C1), 내가 비운 세대를 채울 시인(C2), 같은 문예사조로 잇는 시인(C3)을 — 이미 비평한 시인은 빼고 — 사유와 함께 추천합니다.</p>
   <div class="toolbar">{$refreshBtn} {$lastHtml}</div>{$pollHtml}
   {$summaryHtml}
 </section>
@@ -300,11 +342,15 @@ SPARQL);
 </section>
 
 <section class="panel">
-  <div class="panel-head"><h2>M4 · 편식 지도 <small>출생 세대 · 활동분야</small></h2></div>
-  <p class="note">내가 비평한 시인을 <b>국가서지LOD</b> 생몰년·활동분야로 묶은 분포입니다. 빈 칸이 곧 사각지대 — 아래 나침반(C2)의 입력이 됩니다.</p>
+  <div class="panel-head"><h2>M4 · 편식 지도 <small>출생 세대 · 활동분야 · 문예사조 · 장르</small></h2></div>
+  <p class="note">내가 비평한 시인을 <b>국가서지LOD</b> 생몰년·활동분야와 <b>Wikidata</b> 문예사조(P135)·장르(P136)로 묶은 분포입니다. 빈 칸이 곧 사각지대 — 아래 나침반(C2·C3)의 입력이 됩니다.</p>
   <div class="cols2">
-    <div><div class="sub">출생 세대</div><div class="distbox">{$m4dec}</div></div>
-    <div><div class="sub">활동분야</div><div class="distbox">{$m4field}</div></div>
+    <div><div class="sub">출생 세대 <span class="muted">(국가서지LOD)</span></div><div class="distbox">{$m4dec}</div></div>
+    <div><div class="sub">활동분야 <span class="muted">(국가서지LOD)</span></div><div class="distbox">{$m4field}</div></div>
+  </div>
+  <div class="cols2">
+    <div><div class="sub">문예사조 <span class="muted">(Wikidata P135)</span></div><div class="distbox">{$m4move}</div></div>
+    <div><div class="sub">장르 <span class="muted">(Wikidata P136)</span></div><div class="distbox">{$m4genre}</div></div>
   </div>
   {$m4note}
   <details class="sparql"><summary>SPARQL (M4)</summary><pre class="code">{$qM4}</pre></details>
@@ -324,6 +370,13 @@ SPARQL);
   <p class="note">M4 가 비었다고 알려준 세대를, 내가 실제로 다루는 <b>활동분야</b> 안에서 채울 시인을 국가서지LOD 에서 찾습니다. <b>이미 비평한 시인은 제외</b>하고, 각 추천에 사유(<span class="score">gap</span> = 내가 비운 세대)를 답니다.</p>
   {$c2}
   <details class="sparql"><summary>SPARQL (C2)</summary><pre class="code">{$qC2}</pre></details>
+</section>
+
+<section class="panel highlight">
+  <div class="panel-head"><h2>C3 · 사조·계보로 잇는 다음 시인 <small>문예사조를 공유하는 시인</small></h2></div>
+  <p class="note">내가 비평한 시인과 <b>문예사조(P135)</b>·계보를 공유하지만 아직 안 다룬 <b>Wikidata</b> 시인입니다. 국가서지LOD 에는 없는 관계라 Wikidata 보강이 필요합니다 — 일반 직업('시인·작가')만 겹치는 무의미한 후보는 걸러내고, <b>여러 시인과 겹칠수록</b> 위로 모읍니다.</p>
+  {$c3}
+  <details class="sparql"><summary>SPARQL (C3)</summary><pre class="code">{$qC3}</pre></details>
 </section>
 HTML;
     return ['추론 질의', $body];
