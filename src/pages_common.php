@@ -331,9 +331,16 @@ HTML;
 /** 시집의 국가서지LOD 자원 칩(있으면). */
 function book_nl_chip(array $b): string
 {
-    if (empty($b['nl_uri'])) return '<span class="muted">—</span>';
-    return '<a class="idchip nl" href="' . h($b['nl_uri']) . '" target="_blank" rel="noopener" title="국가서지LOD 시집">NL '
-        . h(NlLod::bookResourceId($b['nl_uri']) ?? '') . '</a>';
+    $uri = trim((string) ($b['nl_uri'] ?? ''));
+    if ($uri === '') return '<span class="muted">—</span>';
+    // 식별자 추출에 실패해도(통제어휘 밖 URI 형태) 칩이 'NL '(빈 문자열)로 비지 않도록,
+    // URI 의 마지막 경로 세그먼트를 폴백 라벨로 쓴다 — 링크는 있는데 식별자만 사라지는 일을 막는다.
+    $label = NlLod::bookResourceId($uri);
+    if ($label === null || $label === '') {
+        $label = preg_replace('#^.*/#', '', rtrim($uri, '/')) ?: 'NL';
+    }
+    return '<a class="idchip nl" href="' . h($uri) . '" target="_blank" rel="noopener" title="국가서지LOD 시집">NL '
+        . h($label) . '</a>';
 }
 
 function page_books(Repo $repo, array $cfg, array $req): array
@@ -582,6 +589,8 @@ function page_poem_view(Repo $repo, array $cfg, array $req): array
     $refs = $refs ?: '<li class="muted">아직 비평문 없음</li>';
     $authHtml = $author ? '<a href="' . h(url('people/view', ['id' => $author['id']])) . '">' . h($author['name']) . '</a>' : '<span class="muted">—</span>';
     $bookHtml = $book ? '<a href="' . h(url('books/view', ['id' => $book['id']])) . '">' . h($book['title']) . '</a>' : '<span class="muted">—</span>';
+    // 수록 시집이 국가서지LOD 자원과 연결돼 있으면 식별자 칩도 함께 보인다(시집 상세에서만 보이던 비대칭 해소).
+    if ($book && !empty($book['nl_uri'])) $bookHtml .= ' <span class="idchips">' . book_nl_chip($book) . '</span>';
     $title = h($pm['title']);
     $back = h(url('poems'));
     $body = <<<HTML

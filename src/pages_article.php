@@ -183,7 +183,19 @@ function page_article_view(Repo $repo, array $cfg, array $req): array
     $meta = [];
     if ($a['author_name'] ?? null) $meta[] = h($a['author_name']);
     if ($a['created']) $meta[] = h($a['created']);
-    if ($cr['title']) $meta[] = '비평 대상: ' . h($cr['title']);
+    if ($cr['title']) {
+        // 비평 대상(시집 또는 그 시가 속한 시집)이 국가서지LOD 자원과 연결돼 있으면 식별자 칩도 함께.
+        $tgtBook = null;
+        if ($cr['kind'] === 'book') {
+            $tgtBook = $repo->book($cr['id']);
+        } elseif ($cr['kind'] === 'poem') {
+            $pm0 = $repo->poem($cr['id']);
+            if ($pm0 && !empty($pm0['book_id'])) $tgtBook = $repo->book($pm0['book_id']);
+        }
+        $tgt = '비평 대상: ' . h($cr['title']);
+        if ($tgtBook && !empty($tgtBook['nl_uri'])) $tgt .= ' ' . book_nl_chip($tgtBook);
+        $meta[] = $tgt;
+    }
     $metaHtml = implode(' · ', $meta);
 
     $editBtn = is_static() ? '' : '<a class="btn" href="' . h(url('articles/edit', ['id' => $a['id']])) . '">수정</a>';

@@ -411,7 +411,8 @@ final class NlLod
     {
         if (!$uri) return null;
         $uri = trim($uri);
-        if (preg_match('#/resource/([A-Za-z0-9\-]+)#', $uri, $m)) return $m[1];
+        // lod.nl.go.kr 의 /resource/ · /page/ URI 양쪽을 허용(KMO…·CNTS-…·WMO… 등, 하이픈 포함).
+        if (preg_match('#/(?:resource|page)/([A-Za-z0-9\-]+)#', $uri, $m)) return $m[1];
         if (preg_match('/^[A-Za-z]{2,5}[0-9][A-Za-z0-9\-]*$/', $uri)) return $uri; // 맨 id 입력
         return null;
     }
