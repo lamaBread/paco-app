@@ -18,6 +18,12 @@ function person_options(Repo $repo, ?string $current, string $filter = 'all'): s
     return $out;
 }
 
+/** 언급(cito:mentions) 대상 종류 → 한국어 라벨 (단일 출처). */
+function mention_kind_label(string $kind): string
+{
+    return ['person' => '시인', 'poem' => '시', 'book' => '시집'][$kind] ?? $kind;
+}
+
 // ============================================================== 대시보드
 function page_dashboard(Repo $repo, array $cfg): array
 {

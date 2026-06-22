@@ -1,5 +1,8 @@
-# PAC SHACL Shapes — v0.6.0
+# PAC SHACL Shapes — v0.7.0
 # =========================
+# v0.7: 언급(cito:mentions) 추가에 맞춰 ArticleShape 에 cito:mentions 제약(IRI·선택·Info)만 더한다.
+#       인용(QuotationShape)·직접/간접 통제어휘는 무변경 — 언급은 인용과 별개 관계라 시 본문
+#       위치(oa:hasTarget) 제약을 받지 않는다. 대상은 이미 발행되는 시인/시/시집 노드의 IRI 다.
 # v0.6: 발행 LOD 를 '외부 추론용 학술 그래프'로 재정향 — 비평문 속 인용 표지 body(GUI 앵커)와
 #       pac:fullText(전문)를 발행하지 않는다. 그에 맞춰 '발행 그래프에 더는 없는 노드'를
 #       검사하던 shape 를 제거: QuotationShape 의 oa:hasBody 제약 · pac:BodyShape ·
@@ -92,7 +95,12 @@ pac:ArticleShape a sh:NodeShape ;
     #   (비평문↔인용 연결은 아래 pac:hasQuotation 으로 유지된다.)
     sh:property [
         sh:path pac:hasQuotation ; sh:minCount 1 ; sh:class pac:Quotation ;
-        sh:message "비평문은 인용을 하나 이상 포함한다." ] .
+        sh:message "비평문은 인용을 하나 이상 포함한다." ] ;
+    # v0.9(ont v0.7): 언급(cito:mentions) — 인용·비평대상과 구별되는 '지칭'. 선택이며 대상은 IRI.
+    #   시 본문 위치를 동반하지 않으므로 oa:hasTarget 류 제약을 받지 않는다(별개 관계).
+    sh:property [
+        sh:path cito:mentions ; sh:nodeKind sh:IRI ; sh:severity sh:Info ;
+        sh:message "언급(cito:mentions)의 대상은 시인·시·시집의 IRI 여야 한다." ] .
 
 #######################################################################
 # 3. 인용 (Web Annotation)

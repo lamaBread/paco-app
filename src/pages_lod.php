@@ -74,7 +74,8 @@ function page_insights(Repo $repo, array $cfg): array
         . '<span><b>' . (int) $s['articles'] . '</b> 비평문</span>'
         . '<span><b>' . (int) $s['poets'] . '</b> 비평한 시인</span>'
         . '<span><b>' . (int) $s['quotations'] . '</b> 인용 <span class="muted">(직접 ' . (int) $s['direct']
-        . ' · 간접 ' . (int) $s['indirect'] . ')</span></span></div>';
+        . ' · 간접 ' . (int) $s['indirect'] . ')</span></span>'
+        . '<span><b>' . (int) ($s['mentions'] ?? 0) . '</b> 언급 <span class="muted">(cito:mentions)</span></span></div>';
 
     // ── M1 인용 방식 거울 ─────────────────────────────────────
     $qs = $ins->quotationStyle();
@@ -91,6 +92,31 @@ function page_insights(Repo $repo, array $cfg): array
             . '<span class="muted">' . $bar($a['indirect'], max(1, $a['total']), 10) . '</span></td></tr>';
     }
     if ($m1rows === '') $m1rows = '<tr><td colspan="4" class="muted">아직 인용이 없습니다.</td></tr>';
+
+    // ── M5 인용·언급 균형 ─────────────────────────────────────
+    $mb = $ins->mentionBalance();
+    $mq = (int) $mb['quotations']; $mm = (int) $mb['mentions']; $mt = $mq + $mm;
+    $m5 = '<div class="distrow"><span class="k">인용 <span class="muted">(다룸)</span></span>' . $bar($mq, max(1, $mt))
+        . '<span class="v">' . $mq . ' <span class="muted">(' . $pct($mq, $mt) . '%)</span></span></div>'
+        . '<div class="distrow"><span class="k">언급 <span class="muted">(호명)</span></span>' . $bar($mm, max(1, $mt))
+        . '<span class="v">' . $mm . ' <span class="muted">(' . $pct($mm, $mt) . '%)</span></span></div>';
+    $m5rows = '';
+    foreach ($mb['perArticle'] as $a) {
+        if ($a['quotes'] === 0 && $a['mentions'] === 0) continue;
+        $tot = max(1, $a['quotes'] + $a['mentions']);
+        $m5rows .= '<tr><td><a href="' . h(url('articles/view', ['id' => $a['id']])) . '">' . h($a['title']) . '</a></td>'
+            . '<td class="num">' . $a['quotes'] . '</td><td class="num">' . $a['mentions'] . '</td>'
+            . '<td>' . $bar($a['quotes'], $tot, 10)
+            . '<span class="muted">' . $bar($a['mentions'], $tot, 10) . '</span></td></tr>';
+    }
+    if ($m5rows === '') $m5rows = '<tr><td colspan="4" class="muted">아직 인용·언급이 없습니다.</td></tr>';
+    $m5top = '';
+    foreach (array_slice($mb['topMentioned'], 0, 24) as $t) {
+        $kindLabel = mention_kind_label($t['kind']);
+        $m5top .= '<span class="chip"><span class="mkind muted">' . h($kindLabel) . '</span> <b>' . h($t['label'])
+            . '</b> <span class="muted">×' . (int) $t['n'] . '</span></span>';
+    }
+    $m5topHtml = $m5top !== '' ? '<div class="sub">자주 언급한 대상</div><div class="chips">' . $m5top . '</div>' : '';
 
     // ── M2 텍스트 밀착도 ──────────────────────────────────────
     $m2rows = '';
@@ -246,6 +272,14 @@ SELECT ?type (COUNT(?q) AS ?n) WHERE {
   ?q   pac:quotationType ?type .     # pac:DirectQuotation | pac:IndirectQuotation
 } GROUP BY ?type
 SPARQL);
+    $qM5 = h(<<<'SPARQL'
+SELECT ?kind (COUNT(*) AS ?n) WHERE {
+  ?art a bibo:Article .
+  { ?art pac:hasQuotation ?x .  BIND("인용" AS ?kind) }   # 시 본문을 다룸
+  UNION
+  { ?art cito:mentions ?x .     BIND("언급" AS ?kind) }   # 이름만 호명
+} GROUP BY ?kind
+SPARQL);
     $qM2 = h(<<<'SPARQL'
 SELECT ?poem ?title (COUNT(DISTINCT ?sel) AS ?selections)
                     (COUNT(DISTINCT ?st)  AS ?stanzas) WHERE {
@@ -306,7 +340,7 @@ SPARQL);
     $body = <<<HTML
 <section class="hero small">
   <h1>추론 질의 <small>— 비평가의 거울과 나침반</small></h1>
-  <p class="lead">외부 사실을 나열하는 대신, <b>당신의 비평 그래프</b>(비평문·인용·연/행)를 거울로 비추고 <b>국가서지LOD·Wikidata</b> 프로파일로 다음 행동을 가리킵니다. <b>거울</b>은 인용 습관·텍스트 밀착도·위치 편향과 시대·분야·문예사조·장르 편식을 보여주고(네트워크 불필요), <b>나침반</b>은 아직 안 다룬 내 자료(C1), 내가 비운 세대를 채울 시인(C2), 같은 문예사조로 잇는 시인(C3)을 — 이미 비평한 시인은 빼고 — 사유와 함께 추천합니다.</p>
+  <p class="lead">외부 사실을 나열하는 대신, <b>당신의 비평 그래프</b>(비평문·인용·연/행)를 거울로 비추고 <b>국가서지LOD·Wikidata</b> 프로파일로 다음 행동을 가리킵니다. <b>거울</b>은 인용·언급 습관·텍스트 밀착도·위치 편향과 시대·분야·문예사조·장르 편식을 보여주고(네트워크 불필요), <b>나침반</b>은 아직 안 다룬 내 자료(C1), 내가 비운 세대를 채울 시인(C2), 같은 문예사조로 잇는 시인(C3)을 — 이미 비평한 시인은 빼고 — 사유와 함께 추천합니다.</p>
   <div class="toolbar">{$refreshBtn} {$lastHtml}</div>{$pollHtml}
   {$summaryHtml}
 </section>
@@ -322,6 +356,18 @@ SPARQL);
     <tbody>{$m1rows}</tbody>
   </table>
   <details class="sparql"><summary>SPARQL (M1)</summary><pre class="code">{$qM1}</pre></details>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>M5 · 인용·언급 균형 <small>다루기 vs 호명하기</small></h2></div>
+  <p class="note">시를 <b>인용해 파고드는지</b>(pac:Quotation), 시인·작품·계보를 <b>이름으로 호명만 하는지</b>(cito:mentions)의 균형입니다. 언급이 인용보다 많으면 — 텍스트에 밀착하기보다 <b>배경·권위를 끌어다 대는</b> 버릇일 수 있습니다.</p>
+  <div class="distbox">{$m5}</div>
+  <table class="grid">
+    <thead><tr><th>비평문</th><th class="num">인용</th><th class="num">언급</th><th>분포</th></tr></thead>
+    <tbody>{$m5rows}</tbody>
+  </table>
+  {$m5topHtml}
+  <details class="sparql"><summary>SPARQL (M5)</summary><pre class="code">{$qM5}</pre></details>
 </section>
 
 <section class="panel">

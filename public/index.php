@@ -158,6 +158,21 @@ try {
             $repo->deleteQuotation($req['id'] ?? '');
             redirect('articles/edit', ['id' => $req['article_id'] ?? ''], '인용을 삭제했습니다.');
 
+        case 'mentions/save':
+            // 언급(cito:mentions) — 인용하지 않고 지칭만 한 시인/시/시집. 대상 select 값은 "kind:id".
+            $aid = post('article_id');
+            $tgt = post('target');               // 'person:ID' | 'poem:ID' | 'book:ID'
+            if ($aid !== '' && str_contains($tgt, ':')) {
+                [$tk, $tid] = explode(':', $tgt, 2);
+                $repo->saveMention(['article_id' => $aid, 'target_kind' => $tk, 'target_id' => $tid, 'note' => post('note')]);
+                redirect('articles/edit', ['id' => $aid], '언급을 추가했습니다.');
+            }
+            redirect('articles/edit', ['id' => $aid], '언급할 대상을 선택하세요.');
+
+        case 'mentions/delete':
+            $repo->deleteMention((int) ($req['id'] ?? 0));
+            redirect('articles/edit', ['id' => $req['article_id'] ?? ''], '언급을 삭제했습니다.');
+
         case 'insights/refresh':
             // 국가서지LOD 프리페치(편식 지도 M4 · 다음 시인 C2 의 입력)는 외부 LOD 에 수십 번
             // 네트워크 호출을 하는 장시간 작업이다. php -S(단일 스레드·블로킹) 요청 안에서 동기로

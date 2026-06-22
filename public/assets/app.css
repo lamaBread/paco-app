@@ -97,6 +97,11 @@ fieldset.boxset,fieldset.qtype{border:1px solid var(--line); border-radius:8px; 
 fieldset legend{padding:0 .4rem; color:var(--ink-soft); font-size:.85rem}
 fieldset.qtype{flex-direction:row; gap:1.2rem; align-items:center; align-self:start}
 .note{font-size:.82rem; color:var(--ink-soft); background:#f7f8fb; border:1px dashed var(--line); padding:.6rem .8rem; border-radius:8px}
+/* 언급(cito:mentions) 추가 폼 — 한 줄 배치(대상 select + 메모 + 버튼) */
+.form.inline-form{flex-direction:row; flex-wrap:wrap; align-items:flex-end; gap:.7rem; max-width:none}
+.form.inline-form .grow{flex:1 1 200px}
+.form.inline-form .btn{flex:0 0 auto}
+.chip .mkind{font-size:.74rem; margin-right:.15rem}
 
 /* ---- detail / kv ---- */
 .crumbs{margin-bottom:.8rem; font-size:.9rem}

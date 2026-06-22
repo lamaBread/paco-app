@@ -126,6 +126,14 @@ final class Rdf
                 $g->add($s, 'pac:hasQuotation', $D($q['id']));
                 self::buildQuotation($g, $D, $q);
             }
+            // v0.9: 언급(cito:mentions) — 인용하지 않고 지칭만 한 시인/시/시집을 가리키는 단일 트리플.
+            // 대상은 이미 위에서 발행된 person/poem/book 노드(pacd:{id})라 그래프에 자연히 잇힌다.
+            // 시 본문·oa:exact 를 동반하지 않으므로 LOD 비훼손 불변식과 무관하다.
+            // 대상이 삭제돼 사라진 행(missing)은 건너뛴다 — 정의 없는 댕글링 IRI 를 발행하지 않게.
+            foreach ($repo->mentions($art['id']) as $m) {
+                if (!empty($m['missing'])) continue;
+                $g->add($s, 'cito:mentions', $D($m['target_id']));
+            }
         }
         return $g;
     }

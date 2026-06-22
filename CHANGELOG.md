@@ -11,6 +11,34 @@ PACO 앱의 버전별 변경과 **데이터 마이그레이션 주의사항**을
 ## [Unreleased]
 - (없음)
 
+## [0.9.0] — 2026-06-22
+> **언급(cito:mentions) — 인용과 나란한 새 관계 축.** 비평문이 인용(직접·간접)하지 않고 이름으로
+> *지칭*만 한 시인·시·시집을 기록한다. 직접/간접 인용의 '세 번째 값'이 아니라 표준 cito: 어휘의
+> **별개 관계**로 모델링해, 인용 통제어휘(직접/간접)·M1·발행 코드의 이진 분기를 전혀 건드리지 않는다.
+
+### Added
+- **언급(cito:mentions).** 비평문 편집 화면에 *언급* 섹션을 두어, 인용 없이 거론한 시인/시/시집을
+  추가·삭제한다. 비평 대상(`cito:critiques`)·인용(`pac:Quotation`)과 구별되는 별개 관계로, 시 본문
+  위치(`oa:hasTarget`·연/행·`oa:exact`) 없이 엔티티만 가리킨다(논의의 배경·계보). 분할 뷰에는 읽기
+  전용 칩으로 보인다. (`src/Repo.php` `mentions`·`saveMention`·`deleteMention`, `src/pages_article.php`,
+  `public/index.php` `mentions/save`·`mentions/delete`)
+- **발행: `article cito:mentions <엔티티>`.** 이미 발행되는 `person`/`poem`/`book` 노드를 가리키는
+  단일 트리플로 발행한다 — 시 본문을 새로 노출하지 않으므로 LOD 비훼손 불변식과 무관. (`src/Rdf.php`)
+- **M5 · 인용·언급 균형(거울).** 시를 인용해 *다루는지*(`pac:Quotation`) 이름만 *호명하는지*
+  (`cito:mentions`)의 비율·비평문별 분해·자주 언급한 대상 분포를 비춘다. 로컬 발행 그래프만 사용
+  (외부 LOD 불필요 → 게이트가 그대로 검증). (`src/Insights.php` `mentionBalance`, `src/pages_lod.php`)
+- **온톨로지 `cito:mentions`(어휘 v0.7.0).** Article → Poet|Poem|Book 응용 프로파일로 선언하고, SHACL
+  `ArticleShape` 에 `cito:mentions`(IRI·선택·Info) 제약을 더했다. 인용(`QuotationShape`)·직접/간접
+  통제어휘(`owl:oneOf`)는 무변경. (`vocab/pac-ontology.owl`, `vocab/pac-shapes.ttl`,
+  `config.php` `ont_version` 0.6.0→0.7.0)
+
+### 데이터 마이그레이션
+- **`SCHEMA_VERSION` 5 → 6: 신규 테이블 `article_mention`(+인덱스).** 순수 *추가형*이라 기존 행을
+  변형하지 않는다. 기존 사용자 DB 는 새 코드가 열 때 단계 6 이 `CREATE TABLE IF NOT EXISTS` 로 멱등
+  적용한다. 기존 인용(`quotation`)·직접/간접 데이터는 **그대로 보존·재해석 없음**. 어휘 버전이
+  0.6.0→0.7.0 으로 오르지만(`cito:mentions` 추가), 인용 유형 열거(`owl:oneOf`)는 무변경이라 기존
+  발행 트리플은 모두 유효하다(외부 소비자 호환).
+
 ## [0.8.0] — 2026-06-22
 > **추론 질의 고도화 — 문예사조·장르 편식 축, '사조로 잇는 다음 시인'(C3), 그리고
 > 국가서지LOD→Wikidata 동일인 능동 연결.** 휴면 상태였던 Wikidata 보강(P135 사조·P136 장르·

@@ -180,6 +180,20 @@ function page_article_view(Repo $repo, array $cfg, array $req): array
     if ($cards === '') $cards = '<p class="muted">인용이 없습니다.</p>';
     $json = json_for_script($jsdata);
 
+    // 언급(cito:mentions) — 인용 없이 지칭만 한 시인/시/시집(읽기 전용 칩).
+    $mentionChips = '';
+    foreach ($repo->mentions($a['id']) as $m) {
+        $kindLabel = mention_kind_label($m['target_kind']);
+        $viewRoute = ['person' => 'people/view', 'poem' => 'poems/view', 'book' => 'books/view'][$m['target_kind']] ?? null;
+        $inner = '<span class="mkind muted">' . h($kindLabel) . '</span> <b>' . h($m['label']) . '</b>';
+        $mentionChips .= ($viewRoute && !$m['missing'])
+            ? '<a class="chip" href="' . h(url($viewRoute, ['id' => $m['target_id']])) . '">' . $inner . '</a>'
+            : '<span class="chip">' . $inner . '</span>';
+    }
+    $mentionsHtml = $mentionChips !== ''
+        ? '<section class="panel"><div class="panel-head"><h2>언급 <small>cito:mentions — 인용 없이 지칭한 대상</small></h2></div><div class="chips">' . $mentionChips . '</div></section>'
+        : '';
+
     $meta = [];
     if ($a['author_name'] ?? null) $meta[] = h($a['author_name']);
     if ($a['created']) $meta[] = h($a['created']);
@@ -223,6 +237,7 @@ function page_article_view(Repo $repo, array $cfg, array $req): array
   <div class="panel-head"><h2>인용 (Web Annotation)</h2></div>
   <div class="qcards" id="qcards">{$cards}</div>
 </section>
+{$mentionsHtml}
 <script type="application/json" id="paco-quotations">{$json}</script>
 HTML;
     return [$a['title'], $body];
@@ -256,6 +271,8 @@ function page_article_edit(Repo $repo, array $cfg, array $req): array
 
     // 인용 섹션(저장된 비평문에만)
     $quotSection = '<p class="muted note">먼저 비평문을 저장하면 인용을 추가할 수 있습니다.</p>';
+    // 언급 섹션(cito:mentions) — 인용 없이 지칭만 한 시인/시/시집. 저장된 비평문에만.
+    $mentionSection = '<p class="muted note">먼저 비평문을 저장하면 언급을 추가할 수 있습니다.</p>';
     if ($cur) {
         $qrows = '';
         foreach ($repo->quotations($cur['id']) as $q) {
@@ -278,6 +295,34 @@ function page_article_edit(Repo $repo, array $cfg, array $req): array
   <tbody>{$qrows}</tbody>
 </table>
 <p class="note">팁: 본문에서 인용 표지를 만들려면, 아래 본문 편집기에서 텍스트를 선택하고 <b>“&lt;q&gt; 삽입”</b>을 누르세요. 부여된 번호(xml:id)를 인용의 <b>앵커</b>로 쓰면 됩니다. → <a href="{$viewUrl}">분할 뷰로 보기</a></p>
+HTML;
+
+        // ----- 언급(cito:mentions) 목록 + 추가 폼 -----
+        $mrows = '';
+        foreach ($repo->mentions($cur['id']) as $m) {
+            $kindLabel = mention_kind_label($m['target_kind']);
+            $name = $m['missing'] ? '<span class="muted">(삭제된 대상) ' . h($m['target_id']) . '</span>' : h($m['label']);
+            $note = ($m['note'] ?? '') !== '' ? '<div class="muted small">' . h($m['note']) . '</div>' : '';
+            $mDel = h(url('mentions/delete', ['id' => $m['id'], 'article_id' => $cur['id']]));
+            $mrows .= '<tr><td>' . h($kindLabel) . '</td><td>' . $name . $note . '</td>'
+                . '<td class="actions"><a class="mini danger" href="' . $mDel . '" data-confirm="언급을 삭제할까요?">삭제</a></td></tr>';
+        }
+        if ($mrows === '') $mrows = '<tr><td colspan="3" class="muted">아직 언급이 없습니다.</td></tr>';
+        $mSaveUrl = h(url('mentions/save'));
+        $mOpts = build_mention_options($repo, '');
+        $mentionSection = <<<HTML
+<div class="panel-head"><h3>언급 (cito:mentions)</h3></div>
+<p class="note">인용하지 않고 <b>이름으로 지칭만 한</b> 시인·시·시집을 적습니다. 비평 대상(cito:critiques)·인용(pac:Quotation)과 구별되는 <b>별개 관계</b>로, 시 본문 위치 없이 엔티티만 가리킵니다(논의의 배경·계보).</p>
+<form method="post" action="{$mSaveUrl}" class="form inline-form">
+  <input type="hidden" name="article_id" value="{$id}">
+  <label class="grow">대상 <select name="target" required>{$mOpts}</select></label>
+  <label class="grow">맥락 메모 <small class="muted">(선택 · 비발행)</small><input name="note" placeholder="예: 이 시인의 영향 관계로 언급"></label>
+  <button class="btn primary">+ 언급 추가</button>
+</form>
+<table class="grid">
+  <thead><tr><th>종류</th><th>대상</th><th class="actions">　</th></tr></thead>
+  <tbody>{$mrows}</tbody>
+</table>
 HTML;
     }
 
@@ -304,8 +349,22 @@ HTML;
   </form>
 </section>
 <section class="panel">{$quotSection}</section>
+<section class="panel">{$mentionSection}</section>
 HTML;
     return [$heading, $body];
+}
+
+/** 언급 대상 <select> 옵션(시인/시/시집 optgroup, 값 "kind:id") */
+function build_mention_options(Repo $repo, string $selected): string
+{
+    $out = '<option value="">— 언급할 대상 —</option>';
+    $pe = ''; foreach ($repo->poets() as $p) $pe .= opt('person:' . $p['id'], $selected, $p['name']);
+    $pg = ''; foreach ($repo->poems() as $pm) $pg .= opt('poem:' . $pm['id'], $selected, $pm['title']);
+    $bg = ''; foreach ($repo->books() as $b) $bg .= opt('book:' . $b['id'], $selected, $b['title']);
+    if ($pe) $out .= '<optgroup label="시인">' . $pe . '</optgroup>';
+    if ($pg) $out .= '<optgroup label="시">' . $pg . '</optgroup>';
+    if ($bg) $out .= '<optgroup label="시집">' . $bg . '</optgroup>';
+    return $out;
 }
 
 // ========================================================= 인용 편집기

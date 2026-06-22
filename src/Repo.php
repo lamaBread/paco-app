@@ -449,6 +449,77 @@ final class Repo
         return ($v === '' || $v === null) ? null : (int) $v;
     }
 
+    // ----------------------------------------------------------- mention (cito:mentions)
+    /**
+     * 한 비평문의 언급들(대상 라벨 해석 포함). 언급은 인용과 별개 관계로, 비평문이 인용하지 않고
+     * 이름으로 지칭만 한 시인/시/시집을 가리킨다(article cito:mentions <엔티티>).
+     * @return array<int,array{id:int,target_kind:string,target_id:string,note:?string,label:string,missing:bool}>
+     */
+    public function mentions(string $articleId): array
+    {
+        $st = $this->db->prepare(
+            'SELECT * FROM article_mention WHERE article_id=? ORDER BY sort_order, id'
+        );
+        $st->execute([$articleId]);
+        $rows = $st->fetchAll();
+        foreach ($rows as &$m) {
+            $label = $this->entityLabel($m['target_kind'], $m['target_id']);
+            $m['missing'] = ($label === null);            // 대상이 삭제됐으면 표시
+            $m['label']   = $label ?? $m['target_id'];
+        }
+        unset($m);
+        return $rows;
+    }
+    /** 언급/참조 대상(person|poem|book) id → 표시 라벨. 없으면 null(삭제됨). */
+    public function entityLabel(string $kind, string $id): ?string
+    {
+        if ($kind === 'person') { $r = $this->person($id); return $r['name'] ?? null; }
+        if ($kind === 'poem')   { $r = $this->poem($id);   return $r['title'] ?? null; }
+        if ($kind === 'book')   { $r = $this->book($id);   return $r['title'] ?? null; }
+        return null;
+    }
+    /** 언급 1건 저장(추가형). $d: article_id, target_kind('person'|'poem'|'book'), target_id, note?. */
+    public function saveMention(array $d): int
+    {
+        $kind = in_array($d['target_kind'] ?? '', ['person', 'poem', 'book'], true) ? $d['target_kind'] : '';
+        $tid  = trim((string) ($d['target_id'] ?? ''));
+        if ($kind === '' || $tid === '') {
+            throw new \InvalidArgumentException('언급 대상(종류·id)이 필요합니다.');
+        }
+        // 대상이 실재해야 한다(정상 GUI 는 실재 엔티티만 옵션으로 내지만, 위조 요청의 고아 행·댕글링
+        // 발행을 원천 차단). 삭제로 사라진 대상이면 거절.
+        if ($this->entityLabel($kind, $tid) === null) {
+            throw new \InvalidArgumentException('언급 대상이 존재하지 않습니다.');
+        }
+        // 같은 비평문에 같은 대상 중복 등록 방지(멱등) — 이미 있으면 그 id 를 돌려준다.
+        $dup = $this->db->prepare(
+            'SELECT id FROM article_mention WHERE article_id=? AND target_kind=? AND target_id=? LIMIT 1'
+        );
+        $dup->execute([$d['article_id'], $kind, $tid]);
+        $existing = $dup->fetchColumn();
+        if ($existing !== false) return (int) $existing;
+
+        $ordSt = $this->db->prepare(
+            'SELECT COALESCE(MAX(sort_order),0)+1 FROM article_mention WHERE article_id=?'
+        );
+        $ordSt->execute([$d['article_id']]);
+        $ord = (int) $ordSt->fetchColumn();
+        $st = $this->db->prepare(
+            'INSERT INTO article_mention (article_id,target_kind,target_id,note,sort_order)
+             VALUES (:aid,:tk,:ti,:note,:so)'
+        );
+        $st->execute([
+            ':aid' => $d['article_id'], ':tk' => $kind, ':ti' => $tid,
+            ':note' => ($d['note'] ?? '') !== '' ? $d['note'] : null,
+            ':so' => $ord,
+        ]);
+        return (int) $this->db->lastInsertId();
+    }
+    public function deleteMention(int $id): void
+    {
+        $this->db->prepare('DELETE FROM article_mention WHERE id=?')->execute([$id]);
+    }
+
     // --------------------------------------------------------------- queries
     /** 내가 비평한 시인 + 빈도 (질의 7.4) */
     public function critiquedPoets(): array

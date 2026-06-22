@@ -49,6 +49,7 @@ final class Insights
             'direct'    => $direct,
             'indirect'  => $indirect,
             'quotations' => $direct + $indirect,
+            'mentions'  => $n('SELECT COUNT(*) FROM article_mention'),
         ];
     }
 
@@ -84,6 +85,58 @@ final class Insights
             ];
         }
         return ['overall' => $overall, 'perArticle' => $perArticle];
+    }
+
+    // ============================================================ M5 인용·언급 균형
+    /**
+     * 인용(pac:Quotation)으로 *텍스트를 다룬* 정도 vs 언급(cito:mentions)으로 *이름만 부른* 정도.
+     * 비평가가 시를 파고드는지(인용), 배경·계보를 호명만 하는지(언급)의 균형을 비춘다.
+     * 로컬 발행 그래프만 사용(외부 LOD 불필요) — 게이트가 그대로 검증한다.
+     * @return array{quotations:int, mentions:int, perArticle:array<int,array>, topMentioned:array<int,array>}
+     */
+    public function mentionBalance(): array
+    {
+        $db = $this->pdo();
+        $quotations = (int) $db->query('SELECT COUNT(*) FROM quotation')->fetchColumn();
+        $mentions   = (int) $db->query('SELECT COUNT(*) FROM article_mention')->fetchColumn();
+
+        $perArticle = [];
+        foreach ($db->query(<<<'SQL'
+            SELECT a.id, a.title,
+                   (SELECT COUNT(*) FROM quotation q       WHERE q.article_id = a.id) AS quotes,
+                   (SELECT COUNT(*) FROM article_mention m WHERE m.article_id = a.id) AS mentions
+            FROM article a
+            ORDER BY a.created DESC, a.title
+        SQL) as $r) {
+            $perArticle[] = [
+                'id' => $r['id'], 'title' => $r['title'],
+                'quotes' => (int) $r['quotes'], 'mentions' => (int) $r['mentions'],
+            ];
+        }
+
+        // 가장 자주 언급한 대상(시인·시·시집) — '호명 습관'의 거울.
+        $topMentioned = [];
+        foreach ($db->query(<<<'SQL'
+            SELECT target_kind, target_id, COUNT(*) AS n
+            FROM article_mention
+            GROUP BY target_kind, target_id
+            ORDER BY n DESC, target_id
+            LIMIT 24
+        SQL) as $r) {
+            $topMentioned[] = [
+                'kind' => $r['target_kind'], 'id' => $r['target_id'],
+                'label' => $this->mentionLabel($r['target_kind'], $r['target_id']),
+                'n' => (int) $r['n'],
+            ];
+        }
+        return ['quotations' => $quotations, 'mentions' => $mentions,
+                'perArticle' => $perArticle, 'topMentioned' => $topMentioned];
+    }
+
+    /** 언급 대상 id → 사람이 읽는 라벨(없으면 id). Repo 의 단일 해석기를 재사용. */
+    private function mentionLabel(string $kind, string $id): string
+    {
+        return $this->repo->entityLabel($kind, $id) ?? $id;
     }
 
     // ============================================================ M2 텍스트 밀착도

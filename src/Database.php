@@ -9,6 +9,8 @@
  *   article           ← bibo:Article (full_text 는 GUI용 내부 본문; v0.6 LOD 비발행)
  *   quotation         ← pac:Quotation (= oa:Annotation). anchor 는 GUI 앵커 — v0.6 발행은 target 측만
  *   quotation_target  ← oa:hasTarget(SpecificResource) 1..N (비연속 인용)
+ *   article_mention   ← cito:mentions (v0.9). 비평문이 인용·간접인용 없이 *지칭*만 한 시인/시/시집.
+ *                       인용(quotation)과 별개 관계 — 시 본문 좌표·oa:exact 없이 엔티티만 가리킨다.
  *   app_setting       ← 사용자 런타임 설정(iri_data 등) k/v. config.php 와 분리되어
  *                       코드 업데이트(파일 덮어쓰기)와 무관하게 보존된다.
  *
@@ -36,7 +38,7 @@ use PDO;
 final class Database
 {
     /** 현재 코드가 기대하는 스키마 단계. 스키마를 바꾸면 +1 하고 migrations() 에 단계 추가. */
-    public const SCHEMA_VERSION = 5;
+    public const SCHEMA_VERSION = 6;
 
     private static ?PDO $pdo = null;
 
@@ -372,6 +374,27 @@ CREATE TABLE IF NOT EXISTS nl_candidate (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_nlcand_uri  ON nl_candidate(nl_uri);
 CREATE INDEX        IF NOT EXISTS ix_nlcand_field ON nl_candidate(field);
+SQL);
+            },
+
+            // ── 6 (v0.9.0): 언급(cito:mentions) — 비평문이 인용하지 않고 *지칭*만 한 엔티티. ──
+            // 직접/간접 인용(quotation)과 나란한 *별개 관계*다. 인용은 시 본문 위치(oa:hasTarget·
+            // 연/행·oa:exact)를 전제하지만, 언급은 시인/시/시집을 이름으로 가리킬 뿐 본문 좌표가 없다.
+            // 그래서 quotation.qtype 의 세 번째 값으로 욱여넣지 않고 별도 테이블로 둔다(개념 정합 +
+            // M1·발행 코드의 direct/indirect 이진 분기를 건드리지 않음). 발행 시 article cito:mentions
+            // <엔티티> 한 트리플 — 이미 발행되는 person/poem/book 노드를 가리키므로 LOD 비훼손과 무관.
+            // 순수 '추가형'(새 테이블)이라 기존 행을 변형하지 않는다.
+            6 => static function (PDO $pdo): void {
+                $pdo->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS article_mention (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id   TEXT NOT NULL REFERENCES article(id) ON DELETE CASCADE, -- cito:mentions 주체
+    target_kind  TEXT NOT NULL,              -- 'person' | 'poem' | 'book' (언급 대상 종류)
+    target_id    TEXT NOT NULL,              -- person.id | poem.id | book.id
+    note         TEXT,                        -- 언급 맥락 메모(선택, GUI 내부 전용 · LOD 비발행)
+    sort_order   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_mention_article ON article_mention(article_id);
 SQL);
             },
         ];
